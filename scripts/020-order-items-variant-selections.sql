@@ -1,0 +1,76 @@
+-- ============================================================
+-- Dishflow — Phase 3: frozen price snapshot column on order_items (020)
+-- ============================================================
+--
+-- WHAT THIS FILE IS
+-- ------------------
+-- Phase 3 generalizes the order wizard's burger-specific meat/fries pricing
+-- into a generic variant-selection model backed by the
+-- products/variant_groups/variant_options tables introduced in Phase 1
+-- (scripts/010-generic-products.sql). That generalization needs somewhere
+-- to persist, per order_item, WHICH variant options were selected and what
+-- their price_delta was AT THE TIME the order was placed — so that editing
+-- or reloading an old order never re-prices it using today's (possibly
+-- since-changed) variant_options.price_delta values.
+--
+-- This migration is intentionally the SMALLEST possible additive change to
+-- make that freeze possible right now:
+--
+--   ALTER TABLE order_items ADD COLUMN variant_selections JSONB;
+--
+-- WHY NOT THE FULL order_items CUTOVER
+-- --------------------------------------
+-- A full schema cutover — renaming order_items.burger_id → product_id,
+-- adding a `kind` discriminator column, renaming order_item_extras →
+-- order_item_modifiers — is explicitly Phase 4's job, not this one. Doing
+-- any of that here would touch the Phase 1 compat views (`burgers`/
+-- `extras`) and every call site that still reads order_items.burger_id/
+-- extra_id (see 010-generic-products.sql's FK-repoint section). Adding a
+-- single nullable JSONB column is additive-only: it does not rename or
+-- remove any existing column, does not touch any view, does not touch any
+-- FK, and every existing SELECT/INSERT/UPDATE that doesn't mention this
+-- column keeps working byte-for-byte identically. This is safe to run
+-- against the current view architecture with zero blast radius beyond the
+-- new column itself.
+--
+-- SHAPE
+-- ------
+-- One entry per selected variant option on that order_item (today that
+-- means at most one "Medallones" entry and one "Papas" entry per burger
+-- line item, since both groups are `selection: 'single'`):
+--
+--   [
+--     {
+--       "variant_group_id": "...",
+--       "variant_group_label": "Medallones",
+--       "variant_option_id": "...",
+--       "variant_option_label": "Doble",
+--       "price_delta": 150
+--     },
+--     ...
+--   ]
+--
+-- The `price_delta` value is COPIED from variant_options.price_delta at
+-- order-creation time (see components/order-wizard/hooks/
+-- use-burger-selection.ts and lib/utils/variant-pricing.ts). It is a frozen
+-- snapshot — later edits to the live variant_options row (e.g. changing the
+-- "Medallón" price in /precios) never change what an already-placed order
+-- is charged, because the order's total is computed from this stored
+-- number, not from a fresh lookup.
+--
+-- NULL means "this order was created before Phase 3 shipped" (or the
+-- burger involved has no Medallones/Papas variant groups at all). Order
+-- loading code (services/order-data-loader.ts) falls back to the
+-- pre-Phase-3 re-derive-from-current-price behavior in that case — by
+-- design, not a bug: old orders don't retroactively gain price freezing.
+--
+-- THIS HAS NOT BEEN RUN AGAINST ANY LIVE DATABASE
+-- -------------------------------------------------
+-- Same caveat as scripts/010-generic-products.sql: no Supabase credentials
+-- were available in this session, so this has not been executed or
+-- verified against a real Postgres instance. Apply to a throwaway/dev clone
+-- first.
+--
+-- ============================================================
+
+ALTER TABLE order_items ADD COLUMN variant_selections JSONB;

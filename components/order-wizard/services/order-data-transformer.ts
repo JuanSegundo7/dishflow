@@ -19,20 +19,26 @@ interface SelectedCombo {
 }
 
 export class OrderDataTransformer {
-  static transformBurgersToOrderItems(
-    burgers: SelectedBurger[],
-    friesExtra?: { price: number } | null,
-  ): OrderItemInput[] {
+  /**
+   * Phase 3: no longer takes a `friesExtra` param — `meatPriceAdjustment`
+   * and the new `friesPriceAdjustment` are both resolved earlier, per item,
+   * straight from the burger's own variant_options.price_delta (see
+   * components/order-wizard/hooks/use-burger-selection.ts and
+   * lib/utils/variant-pricing.ts), so this function only needs to read
+   * them off the item. `unit_price`/`subtotal` keep the exact same shape as
+   * before (meat baked into unit_price, fries only reflected in subtotal —
+   * a pre-existing asymmetry, preserved here unchanged since it doesn't
+   * affect the final order total, which is always driven by `subtotal`).
+   *
+   * `variant_selections` is a NEW, additive companion to `customizations` —
+   * see scripts/020-order-items-variant-selections.sql. It is the frozen
+   * price snapshot: `customizations` keeps being written exactly as before
+   * (Phase 4 and other current readers still depend on it existing).
+   */
+  static transformBurgersToOrderItems(burgers: SelectedBurger[]): OrderItemInput[] {
     return burgers.map((item) => {
       const unitPrice = item.burger.base_price + item.meatPriceAdjustment;
-
-      const baseFries = item.burger.default_fries_quantity ?? 1;
-      const friesDiff = item.friesQuantity - baseFries;
-
-      let friesAdjustment = 0;
-      if (friesExtra) {
-        friesAdjustment = friesDiff * friesExtra.price * item.quantity;
-      }
+      const friesAdjustment = (item.friesPriceAdjustment ?? 0) * item.quantity;
 
       const customizationData = {
         meatCount: item.meatCount,
@@ -49,16 +55,19 @@ export class OrderDataTransformer {
       };
 
       return {
-        burger_id: item.burger.id,
+        product_id: item.burger.id,
+        kind: "product",
         combo_id: null,
         burger_name: item.burger.name,
+        name_snapshot: item.burger.name,
         quantity: item.quantity,
         unit_price: unitPrice,
         subtotal: unitPrice * item.quantity + friesAdjustment,
         customizations: JSON.stringify(customizationData),
+        variant_selections: item.variantSelections ?? null,
         extras: item.selectedExtras.map((ext) => ({
-          extra_id: ext.extra.id,
-          extra_name: ext.extra.name,
+          product_id: ext.extra.id,
+          name_snapshot: ext.extra.name,
           quantity: ext.quantity,
           unit_price: ext.extra.price,
           subtotal: ext.extra.price * ext.quantity,
@@ -108,9 +117,11 @@ export class OrderDataTransformer {
       });
 
       return {
-        burger_id: null,
+        product_id: null,
+        kind: "combo",
         combo_id: c.combo.id,
         burger_name: c.combo.name,
+        name_snapshot: c.combo.name,
         quantity: c.quantity,
         unit_price: c.combo.price,
         subtotal: comboSubtotal,
@@ -153,10 +164,11 @@ export class OrderDataTransformer {
   // 🆕 Sides como order items independientes
 static transformSidesToOrderItems(sides: SelectedSide[]): OrderItemInput[] {
   return sides.map((s) => ({
-    burger_id: null,
+    product_id: s.extra.id,
+    kind: "addon",
     combo_id: null,
-    extra_id: s.extra.id,
     burger_name: s.extra.name,
+    name_snapshot: s.extra.name,
     quantity: s.quantity,
     unit_price: s.extra.price,
 
@@ -167,8 +179,8 @@ static transformSidesToOrderItems(sides: SelectedSide[]): OrderItemInput[] {
 
     // los extras van separados
     extras: s.selectedExtras.map((e) => ({
-      extra_id: e.extra.id,
-      extra_name: e.extra.name,
+      product_id: e.extra.id,
+      name_snapshot: e.extra.name,
       quantity: e.quantity,
       unit_price: e.extra.price,
       subtotal: e.extra.price * e.quantity,
@@ -184,7 +196,7 @@ static transformSidesToOrderItems(sides: SelectedSide[]): OrderItemInput[] {
     sides?: SelectedSide[],
   ): OrderItemInput[] {
     const comboItems = this.transformCombosToOrderItems(combos, meatExtra, friesExtra);
-    const burgerItems = this.transformBurgersToOrderItems(burgers, friesExtra);
+    const burgerItems = this.transformBurgersToOrderItems(burgers);
     const sideItems = sides?.length ? this.transformSidesToOrderItems(sides) : [];
 
     return [...comboItems, ...burgerItems, ...sideItems];

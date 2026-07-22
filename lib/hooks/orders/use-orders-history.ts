@@ -82,9 +82,9 @@ export function useOrdersHistory(dateRange: { from: Date; to: Date }) {
             unit_price,
             subtotal,
             customizations,
-            order_item_extras (
+            order_item_modifiers (
               id,
-              extra_name,
+              name_snapshot,
               quantity,
               unit_price,
               subtotal
@@ -402,11 +402,13 @@ export function useTopBurgers(
         );
       }
 
-      // Fetch image_url from burgers table by name
+      // Fetch image_url from products table by name (non-addon products only,
+      // matching the old `burgers` compat view's WHERE is_addon = FALSE).
       const burgerNames = Object.keys(burgerMap);
       const { data: burgerRows } = await supabase
-        .from("burgers")
+        .from("products")
         .select("id, name, image_url")
+        .eq("is_addon", false)
         .in("name", burgerNames);
 
       const imageMap: Record<string, { id: string; image_url: string | null }> =
@@ -477,11 +479,21 @@ export function useProductStats(
 
       const orderIds = orders.map((o) => o.id);
 
-      // Embed order_item_extras inside the order_items query to avoid a second
-      // request with thousands of UUIDs in the URL (which hits PostgREST URL limits).
+      // Embed order_item_modifiers inside the order_items query to avoid a
+      // second request with thousands of UUIDs in the URL (which hits
+      // PostgREST URL limits).
+      //
+      // Phase 4 (scripts/030-order-items-cutover.sql): order_items.burger_id/
+      // extra_id are gone, replaced by a single product_id + the `kind`
+      // discriminator. Since burger-derived and addon-derived rows now share
+      // ONE product_id -> products(id) FK (instead of two separate FKs to
+      // two separate compat views), there is only one possible embed target
+      // here — `products(...)` — instead of the old `burgers(...)`/
+      // `extras(...)` pair. Same for order_item_modifiers' embedded
+      // `products(...)` (was `extras(...)` off order_item_extras.extra_id).
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
-        .select("quantity, burger_id, extra_id, combo_id, customizations, burgers(default_meat_quantity, default_fries_quantity), extras(category), order_item_extras(quantity, extras(category))")
+        .select("quantity, product_id, kind, combo_id, customizations, products(default_meat_quantity, default_fries_quantity, legacy_extra_category), order_item_modifiers(quantity, products(legacy_extra_category))")
         .in("order_id", orderIds);
 
       if (itemsError) throw itemsError;
@@ -489,15 +501,15 @@ export function useProductStats(
       let totalBurgers = 0, totalMedallones = 0, totalFries = 0, totalSides = 0, totalCombos = 0, totalDrinks = 0;
 
       for (const item of items ?? []) {
-        if (item.extra_id) {
-          // Standalone extra item (fries, sides, drink, etc. ordered as main item)
-          const extra = item.extras as unknown as { category: string } | null;
-          const category = extra?.category;
+        if (item.kind === "addon") {
+          // Standalone product item (fries, sides, drink, etc. ordered as main item)
+          const product = item.products as unknown as { legacy_extra_category: string | null } | null;
+          const category = product?.legacy_extra_category;
           if (category === "extra") totalMedallones += item.quantity;
           else if (category === "fries") totalFries += item.quantity;
           else if (category === "sides") totalSides += item.quantity;
           else if (category === "drink") totalDrinks += item.quantity;
-        } else if (item.combo_id) {
+        } else if (item.kind === "combo") {
           // Combo item — parse customizations JSON to get per-burger meatCount and friesQuantity
           totalCombos += item.quantity;
           try {
@@ -518,22 +530,23 @@ export function useProductStats(
             // customizations malformed — skip
           }
         } else {
-          // Regular burger item (burger_id can be null if the burger was deleted from the menu)
-          const burger = item.burgers as unknown as { default_meat_quantity: number; default_fries_quantity: number } | null;
+          // Regular product item (kind === "product"; product_id can be
+          // null if the product was deleted from the menu)
+          const product = item.products as unknown as { default_meat_quantity: number; default_fries_quantity: number } | null;
           totalBurgers += item.quantity;
-          totalMedallones += item.quantity * (burger?.default_meat_quantity ?? 2);
-          totalFries += item.quantity * Number(burger?.default_fries_quantity ?? 1);
+          totalMedallones += item.quantity * (product?.default_meat_quantity ?? 2);
+          totalFries += item.quantity * Number(product?.default_fries_quantity ?? 1);
         }
 
-        // Add extras added on top of this item (embedded — no second request needed)
-        const embeddedExtras = item.order_item_extras as unknown as Array<{ quantity: number; extras: { category: string } | { category: string }[] | null }> ?? [];
-        for (const extraItem of embeddedExtras) {
-          const extras = extraItem.extras;
-          const category = Array.isArray(extras) ? extras[0]?.category : extras?.category;
-          if (category === "extra") totalMedallones += extraItem.quantity;
-          else if (category === "fries") totalFries += extraItem.quantity;
-          else if (category === "sides") totalSides += extraItem.quantity;
-          else if (category === "drink") totalDrinks += extraItem.quantity;
+        // Add modifiers added on top of this item (embedded — no second request needed)
+        const embeddedModifiers = item.order_item_modifiers as unknown as Array<{ quantity: number; products: { legacy_extra_category: string | null } | { legacy_extra_category: string | null }[] | null }> ?? [];
+        for (const modifierItem of embeddedModifiers) {
+          const products = modifierItem.products;
+          const category = Array.isArray(products) ? products[0]?.legacy_extra_category : products?.legacy_extra_category;
+          if (category === "extra") totalMedallones += modifierItem.quantity;
+          else if (category === "fries") totalFries += modifierItem.quantity;
+          else if (category === "sides") totalSides += modifierItem.quantity;
+          else if (category === "drink") totalDrinks += modifierItem.quantity;
         }
       }
 

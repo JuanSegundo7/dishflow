@@ -9,9 +9,14 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
-import { useBurgers, useExtras, useCustomers } from "@/lib/hooks/use-menu";
+import { useCustomers } from "@/lib/hooks/use-menu";
 import { useCustomerAddresses } from "@/lib/hooks/use-customers";
 import { useAllCombos } from "@/lib/hooks/use-combos";
+import {
+  useAvailableAddonProducts,
+  useAvailableProducts,
+  useBurgerVariantGroups,
+} from "@/lib/hooks/use-products";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils/format";
 import { EditCustomerModal } from "../orders/edit/edit-customer-modal";
@@ -51,11 +56,25 @@ export function OrderWizardDrawer({
 
   // ================= DATA LOADING =================
   const { data: customers } = useCustomers();
-  const { data: burgers } = useBurgers();
-  const { data: extras } = useExtras();
+  const { data: burgers } = useAvailableProducts();
+  const { data: extras } = useAvailableAddonProducts();
   const { data: combos } = useAllCombos();
+  // Phase 3: bulk-fetched variant groups (Medallones/Papas) for every
+  // available burger, keyed by product id — see useBurgerSelection's price
+  // math, which now reads variant_options.price_delta straight off this
+  // instead of the meatExtra/friesExtra magic-string lookups below.
+  const { data: burgerVariantGroups } = useBurgerVariantGroups(burgers);
 
   // ================= COMPUTED DATA =================
+  // NOTE: meatExtra/friesExtra are STILL used below, but ONLY for combos
+  // (wizard.combos / CombosStep) and for display-only recomputation in
+  // SummaryStep — both read a single global "Medallón"/"Papas fritas
+  // chicas" price regardless of which burger is in a combo slot, which is
+  // the pre-existing combos model. Generalizing combos onto per-product
+  // variant groups is explicitly out of scope for this phase (tracked
+  // separately — combos generalization). The plain burgers-step path (see
+  // useBurgerSelection above) no longer reaches into `extras` for a price
+  // at all.
   const meatExtra = useMemo(
     () => extras?.find((e) => e.name === "Medallón"),
     [extras],
@@ -99,6 +118,7 @@ export function OrderWizardDrawer({
     allBurgers: burgers || [],
     allCombos: combos || [],
     allExtras: extras || [],
+    burgerVariantGroups,
   });
 
   // ================= RESET AL ABRIR (solo en create) =================

@@ -397,7 +397,7 @@ export function OrderDetailsModal({
                               className="flex justify-between text-sm"
                             >
                               <span className="text-muted-foreground">
-                                + {extra.quantity}x {extra.extra_name}
+                                + {extra.quantity}x {extra.name_snapshot}
                               </span>
                               <span className="font-medium">
                                 {formatCurrency(extra.subtotal)}

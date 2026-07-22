@@ -22,7 +22,7 @@ export function useOrderForEdit(orderId: string | null) {
           customerAddress:customer_addresses(*),
           items:order_items(
             *,
-            extras:order_item_extras(*)
+            extras:order_item_modifiers(*)
           )
         `,
         )

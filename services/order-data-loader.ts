@@ -10,10 +10,11 @@ export function loadOrderIntoWizard(
   allBurgers: any[],
   allCombos: any[],
   meatExtra?: { price: number } | null,
+  friesExtra?: { price: number } | null,
 ) {
   return {
     customerData: loadCustomerData(order),
-    burgers: loadBurgers(order, allBurgers, allExtras, meatExtra),
+    burgers: loadBurgers(order, allBurgers, allExtras, meatExtra, friesExtra),
     combos: loadCombos(order, allCombos, allBurgers, allExtras),
     settings: loadSettings(order),
     sides: loadSides(order, allExtras),
@@ -53,17 +54,18 @@ function loadBurgers(
   allBurgers: any[],
   allExtras: Extra[],
   meatExtra?: { price: number } | null,
+  friesExtra?: { price: number } | null,
 ): SelectedBurger[] {
-  // Sides se identifican por extra_id != null, no por parsear customizations
-  const burgerItems = order.items.filter(
-    (item) => !item.combo_id && !item.extra_id,
-  );
+  // Phase 4 (scripts/030-order-items-cutover.sql): kind is now an explicit
+  // discriminator instead of the old "burger_id/extra_id/combo_id presence"
+  // convention.
+  const burgerItems = order.items.filter((item) => item.kind === "product");
 
   return burgerItems
     .map((item) => {
-      const burger = allBurgers.find((b) => b.id === item.burger_id);
+      const burger = allBurgers.find((b) => b.id === item.product_id);
       if (!burger) {
-        console.warn(`Burger ${item.burger_id} not found`);
+        console.warn(`Burger ${item.product_id} not found`);
         return null;
       }
 
@@ -77,11 +79,11 @@ function loadBurgers(
       }
 
       const selectedExtras = (item.extras || []).map((extraItem) => {
-        const extra = allExtras.find((e) => e.id === extraItem.extra_id);
+        const extra = allExtras.find((e) => e.id === extraItem.product_id);
         return {
           extra: extra || {
-            id: extraItem.extra_id,
-            name: extraItem.extra_name,
+            id: extraItem.product_id,
+            name: extraItem.name_snapshot,
             price: extraItem.unit_price,
             category: "extra" as const,
             is_available: true,
@@ -93,8 +95,49 @@ function loadBurgers(
 
       const meatCount =
         customData?.meatCount || burger.default_meat_quantity || 2;
-      const meatDiff = meatCount - (burger.default_meat_quantity || 2);
-      const meatPriceAdjustment = meatExtra ? meatDiff * meatExtra.price : 0;
+      const friesQuantity =
+        customData?.friesQuantity ?? burger.default_fries_quantity ?? 1;
+
+      // ---- Phase 3 price freeze (scripts/020-order-items-variant-selections.sql) ----
+      // If this order_item carries a frozen variant_selections snapshot, it
+      // was created after Phase 3 shipped: reconstruct straight from those
+      // stored price_delta values and never touch today's live extras
+      // prices. If it's null, this is a pre-Phase-3 order — fall back to
+      // the EXACT re-derivation-from-current-price behavior this file
+      // always had, unchanged. Old orders intentionally do NOT get price
+      // freezing applied retroactively; that's expected, not a bug.
+      const frozenSelections = item.variant_selections;
+      let meatPriceAdjustment: number;
+      let friesPriceAdjustment: number;
+      let variantSelections: SelectedBurger["variantSelections"];
+
+      if (frozenSelections && frozenSelections.length > 0) {
+        meatPriceAdjustment =
+          frozenSelections.find((v) => v.variant_group_label === "Medallones")
+            ?.price_delta ?? 0;
+        friesPriceAdjustment =
+          frozenSelections.find((v) => v.variant_group_label === "Papas")
+            ?.price_delta ?? 0;
+        variantSelections = frozenSelections;
+      } else {
+        const meatDiff = meatCount - (burger.default_meat_quantity || 2);
+        meatPriceAdjustment = meatExtra ? meatDiff * meatExtra.price : 0;
+
+        const baseFries = burger.default_fries_quantity ?? 1;
+        const friesDiff = friesQuantity - baseFries;
+        friesPriceAdjustment = friesExtra ? friesDiff * friesExtra.price : 0;
+
+        // Deliberately left undefined here (not reconstructed from today's
+        // live variant_options): doing so would let a no-op resave of an
+        // untouched legacy order silently "freeze" it using whatever the
+        // live variant_options happen to be right now, which could already
+        // have drifted from the meatExtra/friesExtra prices used just above
+        // for the SAME numbers — a real inconsistency, not just a cosmetic
+        // one. Only actively touching the meat/fries steppers (see
+        // use-burger-selection.ts) produces a fresh, internally-consistent
+        // variantSelections snapshot.
+        variantSelections = undefined;
+      }
 
       return {
         id: nanoid(),
@@ -102,28 +145,29 @@ function loadBurgers(
         quantity: item.quantity,
         meatCount,
         isVeggie: customData?.isVeggie ?? false,
-        friesQuantity:
-          customData?.friesQuantity ?? burger.default_fries_quantity ?? 1,
+        friesQuantity,
         removedIngredients: customData?.removedIngredients || [],
         selectedExtras,
         meatPriceAdjustment,
+        friesPriceAdjustment,
+        variantSelections,
       };
     })
     .filter(Boolean) as SelectedBurger[];
 }
 
 function loadSides(order: OrderWithItems, allExtras: Extra[]): SelectedSide[] {
-  const sideItems = order.items.filter((item) => !!item.extra_id);
+  const sideItems = order.items.filter((item) => item.kind === "addon");
 
   return sideItems.map((item) => {
-    const extra = allExtras.find((e) => e.id === item.extra_id);
+    const extra = allExtras.find((e) => e.id === item.product_id);
 
     const selectedExtras = (item.extras || []).map((extraItem) => {
-      const e = allExtras.find((e) => e.id === extraItem.extra_id);
+      const e = allExtras.find((e) => e.id === extraItem.product_id);
       return {
         extra: e || {
-          id: extraItem.extra_id,
-          name: extraItem.extra_name,
+          id: extraItem.product_id,
+          name: extraItem.name_snapshot,
           price: extraItem.unit_price,
           category: "extra" as const,
           is_available: true,
@@ -137,7 +181,7 @@ function loadSides(order: OrderWithItems, allExtras: Extra[]): SelectedSide[] {
       return {
         id: nanoid(),
         extra: {
-          id: item.extra_id!,
+          id: item.product_id!,
           name: item.burger_name,
           price: item.unit_price,
           category: "sides" as const,

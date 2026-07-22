@@ -34,10 +34,11 @@ export function useOrders() {
             unit_price,
             subtotal,
             customizations,
-            extra_id,
-            order_item_extras (
+            product_id,
+            kind,
+            order_item_modifiers (
               id,
-              extra_name,
+              name_snapshot,
               quantity,
               unit_price,
               subtotal
@@ -100,7 +101,7 @@ export function useOrderWithItems(orderId: string | null) {
       const itemsWithExtras = await Promise.all(
         items.map(async (item) => {
           const { data: extras, error: extrasError } = await supabase
-            .from("order_item_extras")
+            .from("order_item_modifiers")
             .select("*")
             .eq("order_item_id", item.id);
 

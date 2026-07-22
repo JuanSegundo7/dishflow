@@ -2,19 +2,32 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import type { OrderItemKind, VariantSelectionEntry } from "@/lib/types";
 
 export interface OrderItemInput {
-  burger_id: string | null;
+  // Phase 4 (scripts/030-order-items-cutover.sql): replaces burger_id/
+  // extra_id — both used to point at products(id) already (Phase 1's FK
+  // repoint); `kind` now discriminates what this points at instead of the
+  // old "which of the two nullable columns is set" convention.
+  product_id: string | null;
+  kind: OrderItemKind;
   combo_id?: string | null;
-  extra_id?: string | null; // 🆕 sides
   burger_name: string;
+  // Phase 4: additive frozen-name companion to burger_name — see
+  // scripts/030-order-items-cutover.sql's "WHY burger_name IS KEPT" note.
+  name_snapshot?: string;
   quantity: number;
   unit_price: number;
   subtotal: number;
   customizations?: string;
+  // Phase 3 (scripts/020-order-items-variant-selections.sql): frozen
+  // Medallones/Papas variant-option price snapshot for this line item.
+  // Additive companion to `customizations`, not a replacement — null for
+  // combo/side items and for burgers whose product has no variant groups.
+  variant_selections?: VariantSelectionEntry[] | null;
   extras: {
-    extra_id: string;
-    extra_name: string;
+    product_id: string;
+    name_snapshot: string;
     quantity: number;
     unit_price: number;
     subtotal: number;
@@ -91,14 +104,16 @@ export function useCreateOrder() {
           .from("order_items")
           .insert({
             order_id: order.id,
-            burger_id: item.burger_id,
+            product_id: item.product_id,
+            kind: item.kind,
             combo_id: item.combo_id ?? null,
-            extra_id: item.extra_id ?? null, // 🆕
             burger_name: item.burger_name,
+            name_snapshot: item.name_snapshot ?? item.burger_name,
             quantity: item.quantity,
             unit_price: item.unit_price,
             subtotal: item.subtotal,
             customizations: item.customizations ?? null,
+            variant_selections: item.variant_selections ?? null,
           })
           .select()
           .single();
@@ -106,11 +121,11 @@ export function useCreateOrder() {
         if (itemError) throw itemError;
 
         if (item.extras.length) {
-          await supabase.from("order_item_extras").insert(
+          await supabase.from("order_item_modifiers").insert(
             item.extras.map((ext) => ({
               order_item_id: orderItem.id,
-              extra_id: ext.extra_id,
-              extra_name: ext.extra_name,
+              product_id: ext.product_id,
+              name_snapshot: ext.name_snapshot,
               quantity: ext.quantity,
               unit_price: ext.unit_price,
               subtotal: ext.subtotal,

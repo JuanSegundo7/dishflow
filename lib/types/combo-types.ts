@@ -2,7 +2,7 @@
 // COMBO TYPES - Basados en la estructura de DB
 // ============================================
 
-import { Burger, Extra } from ".";
+import { Burger, Extra, VariantSelectionEntry } from ".";
 
 export interface Combo {
   id: string;
@@ -84,6 +84,33 @@ export interface SelectedBurger {
     quantity: number;
   }>;
   meatPriceAdjustment: number;
+  /**
+   * Phase 3 (generic variant-selection model, see
+   * lib/utils/variant-pricing.ts): the "Papas" (fries quantity) counterpart
+   * to meatPriceAdjustment, sourced from the burger's "Papas" variant
+   * group's price_delta instead of a magic-string extras lookup. Optional
+   * because combo-slot burgers (use-combo-selection.ts / the loadCombos
+   * branch of services/order-data-loader.ts) don't populate it — combos
+   * keep using their own inline meat/fries formula unchanged until Phase 5
+   * generalizes them too.
+   */
+  friesPriceAdjustment?: number;
+  /**
+   * Phase 3 frozen price snapshot for this line item — see
+   * scripts/020-order-items-variant-selections.sql. Holds the resolved
+   * Medallones/Papas variant_option selections (group + option ids/labels
+   * plus the price_delta that was actually charged). Populated whenever
+   * meatCount/friesQuantity are set through the current variant-group-aware
+   * code path (addBurger/updateMeatCount/updateFriesQuantity in
+   * use-burger-selection.ts), or reconstructed verbatim from
+   * order_items.variant_selections when editing an order created after
+   * this phase shipped. Left undefined for combo-slot burgers and for
+   * burgers loaded from a pre-Phase-3 order that has no stored snapshot
+   * (see the fallback branch of loadBurgers in
+   * services/order-data-loader.ts) — those cases intentionally do NOT get
+   * price freezing retroactively.
+   */
+  variantSelections?: VariantSelectionEntry[];
 }
 
 /**

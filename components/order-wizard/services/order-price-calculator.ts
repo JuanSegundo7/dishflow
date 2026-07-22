@@ -34,27 +34,34 @@ interface PriceCalculatorParams {
 }
 
 export class OrderPriceCalculator {
-  static calculateBurgersTotal(
-    burgers: SelectedBurger[],
-    friesExtra?: { price: number } | null,
-  ): number {
+  /**
+   * Phase 3: the burger-only (non-combo) total no longer needs a
+   * `friesExtra` param at all — `meatPriceAdjustment` and
+   * `friesPriceAdjustment` are now both resolved per-item, at
+   * selection/update time, straight from the burger's own
+   * "Medallones"/"Papas" variant_options.price_delta (see
+   * lib/utils/variant-pricing.ts and
+   * components/order-wizard/hooks/use-burger-selection.ts). This is
+   * algebraically identical to the old
+   * `(base_price + meatPriceAdjustment) * quantity + friesDiff * friesExtra.price * quantity`
+   * formula — both deltas are per-unit and get scaled by `quantity`
+   * together here instead of separately, which distributes to the exact
+   * same number. Combo-slot burgers are untouched (calculateCombosTotal
+   * still uses the old meatExtra/friesExtra-based formula — combos are
+   * Phase 5's job).
+   */
+  static calculateBurgersTotal(burgers: SelectedBurger[]): number {
     return burgers.reduce((total, item) => {
-      const burgerTotal =
-        (item.burger.base_price + item.meatPriceAdjustment) * item.quantity;
+      const variantDelta =
+        (item.meatPriceAdjustment ?? 0) + (item.friesPriceAdjustment ?? 0);
+      const burgerTotal = (item.burger.base_price + variantDelta) * item.quantity;
 
       const extrasTotal = item.selectedExtras.reduce(
         (acc, ext) => acc + ext.extra.price * ext.quantity,
         0,
       );
 
-      let friesTotal = 0;
-      if (friesExtra) {
-        const baseFries = item.burger.default_fries_quantity ?? 1;
-        const friesDiff = item.friesQuantity - baseFries;
-        friesTotal = friesDiff * friesExtra.price * item.quantity;
-      }
-
-      return total + burgerTotal + extrasTotal + friesTotal;
+      return total + burgerTotal + extrasTotal;
     }, 0);
   }
 
@@ -202,10 +209,7 @@ export class OrderPriceCalculator {
     meatExtra?: { price: number } | null,
     friesExtra?: { price: number } | null,
   ): number {
-    const burgersTotal = this.calculateBurgersTotal(
-      selectedBurgers,
-      friesExtra,
-    );
+    const burgersTotal = this.calculateBurgersTotal(selectedBurgers);
 
     const combosTotal = this.calculateCombosTotal(
       selectedCombos,

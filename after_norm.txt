@@ -1,0 +1,43 @@
+app/(dashboard)/precios/page.tsx: error TS2322: Type '"combo"' is not assignable to type 'ExtraCategory'.
+components/layout/sidebar-layout.tsx: error TS2554: Expected 1 arguments, but got 0.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2305: Module '"@/lib/hooks/use-menu"' has no exported member 'useBurgers'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2305: Module '"@/lib/hooks/use-menu"' has no exported member 'useExtras'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2307: Cannot find module '@/lib/types/combo' or its corresponding type declarations.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2322: Type '(OrderItemInput | { burger_id: string; burger_name: string; quantity: number; unit_price: number; subtotal: number; customizations: string | undefined; extras: { extra_id: string; extra_name: string; quantity: number; unit_price: number; subtotal: number; }[]; })[]' is not assignable to type 'OrderItemInput[]'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2322: Type '{ burger_id: string; burger_name: string; quantity: number; unit_price: number; subtotal: number; customizations: string; }[]' is not assignable to type 'OrderItemInput[]'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2322: Type 'string | undefined' is not assignable to type 'string | null'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2322: Type 'string | undefined' is not assignable to type 'string | null'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2345: Argument of type '{ name: string; phone: string; }' is not assignable to parameter of type 'SetStateAction<{ name: string; address: string; phone: string; }>'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2741: Property 'friesQuantity' is missing in type 'SelectedBurger' but required in type 'import("C:/Users/juans/programming/solvifylabs/dishflow/components/orders/burger-item-card").SelectedBurger'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS2741: Property 'onUpdateFriesCount' is missing in type '{ key: string; item: SelectedBurger; expanded: boolean; meatExtra: any; extrasByCategory: any; baseMeatCount: number | undefined; onToggleExpand: () => void; onUpdateQuantity: (d: number) => void; ... 4 more ...; onRemove: () => void; }' but required in type 'Props'.
+components/orders/order-wizard-drawer.OLD.tsx: error TS7006: Parameter 'acc' implicitly has an 'any' type.
+components/orders/order-wizard-drawer.OLD.tsx: error TS7006: Parameter 'burger' implicitly has an 'any' type.
+components/orders/order-wizard-drawer.OLD.tsx: error TS7006: Parameter 'burger' implicitly has an 'any' type.
+components/orders/order-wizard-drawer.OLD.tsx: error TS7006: Parameter 'e' implicitly has an 'any' type.
+components/orders/order-wizard-drawer.OLD.tsx: error TS7006: Parameter 'extra' implicitly has an 'any' type.
+components/order-wizard/components/burger-card.tsx: error TS7006: Parameter 'b' implicitly has an 'any' type.
+components/order-wizard/components/burger-card.tsx: error TS7006: Parameter 'b' implicitly has an 'any' type.
+components/order-wizard/components/burger-card.tsx: error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/order-wizard/components/burger-card.tsx: error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/order-wizard/components/selected-burger.tsx: error TS2305: Module '"../hooks/use-combo-selection"' has no exported member 'SelectedBurger'.
+components/order-wizard/components/selected-burger.tsx: error TS7006: Parameter 'b' implicitly has an 'any' type.
+components/order-wizard/components/selected-burger.tsx: error TS7006: Parameter 'b' implicitly has an 'any' type.
+components/order-wizard/components/selected-burger.tsx: error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/order-wizard/hooks/use-combo-selection.ts: error TS2339: Property 'no_fries' does not exist on type '{ min_quantity: number; max_quantity: number; allowed_meat_count?: number[] | undefined; }'.
+components/order-wizard/hooks/use-combo-selection.ts: error TS2339: Property 'no_fries' does not exist on type '{ min_quantity: number; max_quantity: number; allowed_meat_count?: number[] | undefined; }'.
+components/order-wizard/order-wizard-context.tsx: error TS2304: Cannot find name 'useOrderWizard'.
+components/order-wizard/services/order-data-transformer.ts: error TS2322: Type '{ product_id: string; kind: "addon"; combo_id: null; burger_name: string; name_snapshot: string; quantity: number; unit_price: number; subtotal: number; customizations: null; extras: { product_id: string; name_snapshot: string; quantity: number; unit_price: number; subtotal: number; }[]; }[]' is not assignable to type 'OrderItemInput[]'.
+components/ui/drawer.tsx: error TS2307: Cannot find module 'vaul' or its corresponding type declarations.
+lib/utils/formatOrderWhatsapp.ts: error TS2339: Property 'order_items' does not exist on type 'Order'.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'e' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'e' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'extra' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'item' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'item' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 's' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'sum' implicitly has an 'any' type.
+lib/utils/formatOrderWhatsapp.ts: error TS7006: Parameter 'sum' implicitly has an 'any' type.
+lib/utils/order-status.ts: error TS2353: Object literal may only specify known properties, and 'paid' does not exist in type 'Record<OrderStatus, { label: string; className: string; }>'.
+tailwind.config.ts: error TS2322: Type '["class"]' is not assignable to type 'DarkModeStrategy | undefined'.
+tailwind.config.ts: error TS2322: Type '{ darkMode: ["class"]; content: string[]; prefix: string; theme: { extend: { boxShadow: { 'ios-sm': string; 'ios-md': string; 'ios-lg': string; 'ios-xl': string; 'ios-dark-sm': string; 'ios-dark-md': string; 'ios-dark-lg': string; 'ios-dark-xl': string; }; backdropBlur: { ...; }; borderRadius: { ...; }; animation: {...' is not assignable to type 'UserConfig'.

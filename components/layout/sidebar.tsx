@@ -12,6 +12,7 @@ import {
   Component,
   User,
   LogOut,
+  CreditCard,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/sidebar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { SERVICE_NAV_HREFS } from "@/lib/service-nav-map";
 import Image from "next/image";
 import { Pacifico, Baloo_2 } from "next/font/google";
 
@@ -48,11 +50,26 @@ const navigation = [
   { name: "Combos", href: "/combos", icon: Component },
   { name: "Extras", href: "/extras", icon: Plus },
   { name: "Precios", href: "/precios", icon: DollarSign },
+  { name: "Mi Plan", href: "/plan", icon: CreditCard },
 ];
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  /** Active service keys for sidebar gating; `null`/`undefined` disables gating (fail-open). */
+  activeServiceKeys?: string[] | null;
+}
+
+function isNavItemVisible(href: string, activeServiceKeys?: string[] | null): boolean {
+  if (!activeServiceKeys) return true; // fail-open: no gating info, show everything
+
+  return !Object.entries(SERVICE_NAV_HREFS).some(
+    ([serviceKey, hrefs]) => hrefs.includes(href) && !activeServiceKeys.includes(serviceKey)
+  );
+}
+
+export function AppSidebar({ activeServiceKeys }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const visibleNavigation = navigation.filter((item) => isNavItemVisible(item.href, activeServiceKeys));
 
   async function handleLogout() {
     const supabase = createClient()
@@ -93,7 +110,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navigation.map((item) => {
+              {visibleNavigation.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.name}>

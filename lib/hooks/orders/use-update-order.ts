@@ -31,7 +31,7 @@ export function useUpdateOrder() {
       orderId: string;
       payload: UpdateOrderPayload;
     }) => {
-      // 1️⃣ Eliminar order_item_extras de los items viejos
+      // 1️⃣ Eliminar order_item_modifiers de los items viejos
       const { data: oldItems } = await supabase
         .from("order_items")
         .select("id")
@@ -40,7 +40,7 @@ export function useUpdateOrder() {
       if (oldItems && oldItems.length > 0) {
         const oldItemIds = oldItems.map((item) => item.id);
         await supabase
-          .from("order_item_extras")
+          .from("order_item_modifiers")
           .delete()
           .in("order_item_id", oldItemIds);
       }
@@ -87,14 +87,20 @@ export function useUpdateOrder() {
       // 5️⃣ Insertar nuevos order_items
       const itemsToInsert = payload.items.map((item) => ({
         order_id: orderId,
-        burger_id: item.burger_id,
+        product_id: item.product_id,
+        kind: item.kind,
         combo_id: item.combo_id ?? null,
-        extra_id: item.extra_id ?? null, // 🆕
         burger_name: item.burger_name,
+        name_snapshot: item.name_snapshot ?? item.burger_name,
         quantity: item.quantity,
         unit_price: item.unit_price,
         subtotal: item.subtotal,
         customizations: item.customizations ?? null,
+        // Phase 3: frozen price snapshot, see
+        // scripts/020-order-items-variant-selections.sql. Edit mode
+        // deletes+reinserts order_items (see step 2 above), so this must be
+        // threaded through here too, not just in use-create-order.ts.
+        variant_selections: item.variant_selections ?? null,
       }));
 
       const { data: insertedItems, error: itemsError } = await supabase
@@ -104,7 +110,7 @@ export function useUpdateOrder() {
 
       if (itemsError) throw itemsError;
 
-      // 6️⃣ Insertar order_item_extras
+      // 6️⃣ Insertar order_item_modifiers
       const extrasToInsert: any[] = [];
 
       payload.items.forEach((item, index) => {
@@ -114,8 +120,8 @@ export function useUpdateOrder() {
         item.extras.forEach((extra) => {
           extrasToInsert.push({
             order_item_id: orderItemId,
-            extra_id: extra.extra_id,
-            extra_name: extra.extra_name,
+            product_id: extra.product_id,
+            name_snapshot: extra.name_snapshot,
             quantity: extra.quantity,
             unit_price: extra.unit_price,
             subtotal: extra.subtotal,
@@ -125,7 +131,7 @@ export function useUpdateOrder() {
 
       if (extrasToInsert.length > 0) {
         const { error: extrasError } = await supabase
-          .from("order_item_extras")
+          .from("order_item_modifiers")
           .insert(extrasToInsert);
 
         if (extrasError) throw extrasError;

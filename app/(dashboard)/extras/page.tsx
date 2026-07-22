@@ -36,38 +36,36 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Edit, Plus, Trash2 } from "lucide-react";
+import { useAddonProducts, type AddonProduct } from "@/lib/hooks/use-products";
 import {
-  useAllExtras,
-  useCreateExtra,
-  useUpdateExtra,
-  useDeleteExtra,
-} from "@/lib/hooks/use-menu-crud";
-import type { Extra, ExtraCategory } from "@/lib/types";
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+} from "@/lib/hooks/use-products-crud";
+import type { ExtraCategory } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+import { burgerVertical } from "@/lib/verticals/burger";
 
-const categoryLabels: Record<ExtraCategory, string> = {
-  extra: "Extras",
-  drink: "Bebidas",
-  fries: "Papas",
-  sides: "Acompañamientos", // 🆕
-};
+const categoryLabels = burgerVertical.labels.variantGroupLabels;
 
 const PAGE_SIZE = 12;
 
 export default function ExtrasPage() {
-  const { data: extras, isLoading } = useAllExtras();
-  const createExtra = useCreateExtra();
-  const updateExtra = useUpdateExtra();
-  const deleteExtra = useDeleteExtra();
+  const { data: extras, isLoading } = useAddonProducts();
+  const createExtra = useCreateProduct();
+  const updateExtra = useUpdateProduct();
+  const deleteExtra = useDeleteProduct();
 
   const [activeTab, setActiveTab] = useState<ExtraCategory | "all">("all");
   const [page, setPage] = useState(1);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingExtra, setEditingExtra] = useState<Extra | null>(null);
-  const [deletingExtra, setDeletingExtra] = useState<Extra | null>(null);
+  const [editingExtra, setEditingExtra] = useState<AddonProduct | null>(null);
+  const [deletingExtra, setDeletingExtra] = useState<AddonProduct | null>(
+    null,
+  );
 
   const [formData, setFormData] = useState({
     name: "",
@@ -104,29 +102,40 @@ export default function ExtrasPage() {
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (extra: Extra) => {
+  const handleOpenEdit = (extra: AddonProduct) => {
     setEditingExtra(extra);
     setFormData({
       name: extra.name,
-      category: extra.category,
-      price: extra.price.toString(),
+      category: extra.category || "extra",
+      price: extra.base_price.toString(),
       is_available: extra.is_available,
     });
     setDialogOpen(true);
   };
 
   const handleSubmit = async () => {
-    const payload = {
-      name: formData.name,
-      category: formData.category,
-      price: Number(formData.price),
-      is_available: formData.is_available,
-    };
-
     if (editingExtra) {
-      await updateExtra.mutateAsync({ id: editingExtra.id, ...payload });
+      await updateExtra.mutateAsync({
+        id: editingExtra.id,
+        name: formData.name,
+        legacy_extra_category: formData.category,
+        base_price: Number(formData.price),
+        is_available: formData.is_available,
+      });
     } else {
-      await createExtra.mutateAsync(payload);
+      await createExtra.mutateAsync({
+        name: formData.name,
+        legacy_extra_category: formData.category,
+        base_price: Number(formData.price),
+        is_available: formData.is_available,
+        description: null,
+        image_url: null,
+        ingredients: [],
+        category_id: null,
+        is_addon: true,
+        default_meat_quantity: null,
+        default_fries_quantity: null,
+      });
     }
 
     setDialogOpen(false);
@@ -134,7 +143,7 @@ export default function ExtrasPage() {
 
   const handleDelete = async () => {
     if (!deletingExtra) return;
-    await deleteExtra.mutateAsync(deletingExtra.id);
+    await deleteExtra.mutateAsync({ id: deletingExtra.id, isAddon: true });
     setDeleteDialogOpen(false);
     setDeletingExtra(null);
   };
@@ -144,8 +153,8 @@ export default function ExtrasPage() {
   return (
     <div className="flex h-screen flex-col">
       <Header
-        title="Extras"
-        subtitle="Administra extras, bebidas, papas y acompañamientos"
+        title={burgerVertical.labels.pages.extras.title}
+        subtitle={burgerVertical.labels.pages.extras.subtitle}
       />
 
       {/* FILTER BAR */}
@@ -206,13 +215,13 @@ export default function ExtrasPage() {
                   <div>
                     <p className="font-medium leading-none">{extra.name}</p>
                     <span className="text-xs text-muted-foreground">
-                      {categoryLabels[extra.category]}
+                      {extra.category ? categoryLabels[extra.category] : ""}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <span className="font-semibold">
-                      {formatCurrency(extra.price)}
+                      {formatCurrency(extra.base_price)}
                     </span>
 
                     <Badge variant="outline" className="text-xs bg-card">

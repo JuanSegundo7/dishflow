@@ -1,0 +1,96 @@
+-- ============================================================
+-- Dishflow — Phase 4: drop burgers/extras compat views + legacy tables (031)
+-- ============================================================
+--
+-- WHAT THIS FILE IS
+-- ------------------
+-- Deliberately kept SEPARATE from scripts/030-order-items-cutover.sql so it
+-- can be withheld/deferred on its own without touching that file's work, in
+-- case the safety-gate audit below had turned up an unmigratable consumer.
+-- It did not — see the audit summary below and the accompanying task
+-- report for full detail — so this file drops:
+--   - the `burgers`/`extras` compat VIEWS created in
+--     scripts/010-generic-products.sql (and their INSTEAD OF INSERT
+--     triggers/functions)
+--   - the `burgers_legacy`/`extras_legacy` tables those views' real data
+--     was renamed FROM in that same migration
+--
+-- SAFETY-GATE AUDIT SUMMARY (full detail in the task report)
+-- -------------------------------------------------------------
+-- Whole-repo grep for `.from("burgers")` / `.from("extras")` / imports from
+-- `@/lib/hooks/use-menu` / `@/lib/hooks/use-menu-crud`, EXCLUDING those two
+-- hook files themselves and the two known-dead files (order-wizard-drawer.
+-- OLD.tsx, components/order-wizard/components/*.tsx — confirmed
+-- orphaned/unimported since Phase 3). Two real consumers were found and
+-- migrated onto the Phase 2 products-based hooks BEFORE this file was
+-- written:
+--   - components/order-wizard/order-wizard-drawer.tsx — was calling
+--     useBurgers()/useExtras() from lib/hooks/use-menu.ts (which queried
+--     the `burgers`/`extras` views). Migrated onto two new hooks added to
+--     lib/hooks/use-products.ts (useAvailableProducts/
+--     useAvailableAddonProducts) that query `products` directly, filtered
+--     to is_available = true, and SHAPE their result identically to the
+--     `Burger`/`Extra` interfaces the rest of the order wizard already
+--     consumes (base_price/ingredients/etc. for Burger; category+price —
+--     mapped from legacy_extra_category/base_price — for Extra). This
+--     means zero changes were needed in any of the ~9 wizard files that
+--     consume the `Burger`/`Extra` TYPES (use-burger-selection.ts,
+--     use-combo-selection.ts, order-price-calculator.ts,
+--     order-data-transformer.ts, the step components, etc.) — only the
+--     fetch hook's data SOURCE changed, not the shape it returns.
+--   - lib/hooks/orders/use-orders-history.ts — useTopBurgers()'s plain
+--     `.from("burgers").select("id, name, image_url")` migrated to
+--     `.from("products").select("id, name, image_url").eq("is_addon",
+--     false)`. useProductStats()'s embedded-join select (the one Phase 1's
+--     FK-repoint section exists specifically to keep working) was
+--     rewritten to select `product_id, kind` (replacing burger_id/extra_id/
+--     the old 3-column presence check) and embed `products(...)` /
+--     `order_item_modifiers(quantity, products(...))` instead of
+--     `burgers(...)`/`extras(...)`/`order_item_extras(quantity,
+--     extras(...))` — this now resolves via the SAME single
+--     order_items.product_id -> products(id) FK that scripts/
+--     030-order-items-cutover.sql establishes, so PostgREST can still trace
+--     it with no ambiguity.
+--
+-- lib/hooks/use-menu.ts's useBurgers()/useExtras() and the entire
+-- lib/hooks/use-menu-crud.ts file are now fully unreferenced by any live
+-- code path (confirmed by grep — only doc-comment mentions remain in
+-- use-products.ts/use-products-crud.ts). Both were DELIBERATELY LEFT IN
+-- PLACE (not deleted) rather than cleaned up in the same pass as this
+-- migration — they are genuinely dead code now, but deleting them produced
+-- zero functional benefit and only added tsc-diff noise in an already-large
+-- change touching the app's most critical live path, so that cleanup was
+-- deferred. This is what makes it safe to drop the views below — nothing
+-- queries them anymore, whether or not their dead call sites are ever
+-- physically removed. A future pass can delete
+-- lib/hooks/use-menu-crud.ts outright and useBurgers()/useExtras() from
+-- lib/hooks/use-menu.ts (keeping useCustomers(), which is unrelated to the
+-- views) once this file has actually been run.
+--
+-- THIS HAS NOT BEEN RUN AGAINST ANY LIVE DATABASE
+-- -------------------------------------------------
+-- Same caveat as every prior migration in this refactor.
+--
+-- REVERSIBILITY
+-- --------------
+-- NOT reversible on its own — burgers_legacy/extras_legacy are gone after
+-- this runs. To roll back, restore both tables and the views/triggers from
+-- a backup taken before this file was applied (or from Phase 1's own
+-- `products` data, reconstructing burgers_legacy/extras_legacy via
+-- `SELECT ... FROM products WHERE is_addon = false/true`, though that loses
+-- any legacy-table-only columns that were never carried into `products`).
+-- This is why this file is kept separate from scripts/030 and from Phase 1:
+-- burgers_legacy/extras_legacy were deliberately left in place through
+-- Phases 1–4's development for exactly this rollback margin, and dropping
+-- them is the one genuinely irreversible step in the whole refactor so far.
+--
+-- ============================================================
+
+DROP VIEW extras;
+DROP VIEW burgers;
+
+DROP FUNCTION extras_view_insert();
+DROP FUNCTION burgers_view_insert();
+
+DROP TABLE extras_legacy;
+DROP TABLE burgers_legacy;

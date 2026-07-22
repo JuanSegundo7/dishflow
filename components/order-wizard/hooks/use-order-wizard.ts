@@ -14,7 +14,7 @@ import {
   useCreateCustomer,
   useCreateCustomerAddress,
 } from "@/lib/hooks/use-customers";
-import type { Extra, OrderWithItems } from "@/lib/types";
+import type { Extra, OrderWithItems, VariantGroupWithOptions } from "@/lib/types";
 import { loadOrderIntoWizard } from "@/services/order-data-loader";
 import { useUpdateOrder } from "@/lib/hooks/orders/use-update-order";
 import { useSidesSelection } from "./use-side-selection";
@@ -27,6 +27,16 @@ interface UseOrderWizardParams {
   allBurgers?: any[];
   allCombos?: any[];
   allExtras?: Extra[];
+  /**
+   * Phase 3: burger_id -> variant_groups map (see `useBurgerVariantGroups`
+   * in lib/hooks/use-products.ts), used by `useBurgerSelection` to price
+   * meat/fries steppers off variant_options.price_delta instead of
+   * `meatExtra`/`friesExtra`. `meatExtra`/`friesExtra` themselves are still
+   * needed here — combos (useComboSelection/calculateCombosTotal/
+   * transformCombosToOrderItems) and the summary step keep using them
+   * unchanged; combos are Phase 5's job, not this one's.
+   */
+  burgerVariantGroups?: Record<string, VariantGroupWithOptions[]>;
 }
 
 export function useOrderWizard({
@@ -37,12 +47,13 @@ export function useOrderWizard({
   allBurgers = [],
   allCombos = [],
   allExtras = [],
+  burgerVariantGroups,
 }: UseOrderWizardParams) {
   const isSubmittingRef = useRef(false);
 
   // ================= HOOKS =================
   const customer = useCustomerSelection();
-  const burgers = useBurgerSelection(meatExtra);
+  const burgers = useBurgerSelection(burgerVariantGroups);
   const combos = useComboSelection();
   const settings = useOrderSettings();
   const sides = useSidesSelection();
@@ -158,6 +169,7 @@ export function useOrderWizard({
         allBurgers,
         allCombos,
         meatExtra,
+        friesExtra,
       );
 
       customer.loadCustomerData(wizardData.customerData);

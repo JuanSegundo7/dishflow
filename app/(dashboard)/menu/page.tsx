@@ -40,29 +40,30 @@ import {
   Upload,
   ImageIcon,
 } from "lucide-react";
+import { useProducts } from "@/lib/hooks/use-products";
 import {
-  useAllBurgers,
-  useCreateBurger,
-  useUpdateBurger,
-  useDeleteBurger,
-} from "@/lib/hooks/use-menu-crud";
-import type { Burger } from "@/lib/types";
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+} from "@/lib/hooks/use-products-crud";
+import type { Product } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { useImageUpload } from "@/lib/hooks/use-image-upload";
+import { burgerVertical } from "@/lib/verticals/burger";
 
 export default function MenuPage() {
-  const { data: burgers, isLoading } = useAllBurgers();
-  const createBurger = useCreateBurger();
-  const updateBurger = useUpdateBurger();
-  const deleteBurger = useDeleteBurger();
+  const { data: burgers, isLoading } = useProducts();
+  const createBurger = useCreateProduct();
+  const updateBurger = useUpdateProduct();
+  const deleteBurger = useDeleteProduct();
   const { uploadImage, deleteImage, isUploading, uploadProgress } =
     useImageUpload();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingBurger, setEditingBurger] = useState<Burger | null>(null);
-  const [deletingBurger, setDeletingBurger] = useState<Burger | null>(null);
+  const [editingBurger, setEditingBurger] = useState<Product | null>(null);
+  const [deletingBurger, setDeletingBurger] = useState<Product | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -101,7 +102,7 @@ export default function MenuPage() {
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (burger: Burger) => {
+  const handleOpenEdit = (burger: Product) => {
     setEditingBurger(burger);
     setFormData({
       name: burger.name,
@@ -120,7 +121,7 @@ export default function MenuPage() {
     setDialogOpen(true);
   };
 
-  const handleToggleAvailability = async (burger: Burger) => {
+  const handleToggleAvailability = async (burger: Product) => {
     await updateBurger.mutateAsync({
       id: burger.id,
       is_available: !burger.is_available,
@@ -197,6 +198,9 @@ export default function MenuPage() {
         ingredients: ingredientsList,
         is_available: formData.is_available,
         image_url: imageUrl,
+        category_id: null,
+        is_addon: false,
+        legacy_extra_category: null,
       };
 
       if (editingBurger) {
@@ -221,7 +225,10 @@ export default function MenuPage() {
         await deleteImage(deletingBurger.image_url);
       }
 
-      await deleteBurger.mutateAsync(deletingBurger.id);
+      await deleteBurger.mutateAsync({
+        id: deletingBurger.id,
+        isAddon: false,
+      });
       setDeleteDialogOpen(false);
       setDeletingBurger(null);
     } catch (error) {
@@ -233,7 +240,10 @@ export default function MenuPage() {
 
   return (
     <section className="flex h-screen flex-col">
-      <Header title="Menú" subtitle="Administra las hamburguesas del menú" />
+      <Header
+        title={burgerVertical.labels.pages.menu.title}
+        subtitle={burgerVertical.labels.pages.menu.subtitle}
+      />
 
       <div className="flex-1 overflow-auto p-6 md:py-6 md:px-0">
         {/* Header */}

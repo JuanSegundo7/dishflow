@@ -1,22 +1,44 @@
 import { useState } from "react";
 import { nanoid } from "nanoid";
-import type { Burger, Extra } from "@/lib/types";
+import type { Burger, Extra, VariantGroupWithOptions } from "@/lib/types";
 import { SelectedBurger } from "@/lib/types/combo-types";
+import { buildBurgerVariantSelections } from "@/lib/utils/variant-pricing";
 
-export function useBurgerSelection(meatExtra?: { price: number } | null) {
+/**
+ * Phase 3: `burgerVariantGroups` replaces the old `meatExtra`-price-based
+ * formula. It's a map of product_id -> that burger's variant_groups (see
+ * `useBurgerVariantGroups` in lib/hooks/use-products.ts), keyed by burger id
+ * so this hook can resolve each burger's own "Medallones"/"Papas" groups
+ * without needing to fetch per-item (see that hook's doc comment for why —
+ * Rules of Hooks don't allow a variable number of hook calls here).
+ */
+export function useBurgerSelection(
+  burgerVariantGroups?: Record<string, VariantGroupWithOptions[]>,
+) {
   const [selectedBurgers, setSelectedBurgers] = useState<SelectedBurger[]>([]);
   const [expandedBurger, setExpandedBurger] = useState<string | null>(null);
 
   const addBurger = (burger: Burger) => {
+    const meatCount = burger.default_meat_quantity ?? 2;
+    const friesQuantity = burger.default_fries_quantity ?? 1;
+    const { variantSelections, meatPriceAdjustment, friesPriceAdjustment } =
+      buildBurgerVariantSelections(
+        burgerVariantGroups?.[burger.id],
+        meatCount,
+        friesQuantity,
+      );
+
     const newBurger: SelectedBurger = {
       id: nanoid(),
       burger,
       quantity: 1,
-      meatCount: burger.default_meat_quantity ?? 2,
-      meatPriceAdjustment: 0,
+      meatCount,
+      meatPriceAdjustment,
+      friesPriceAdjustment,
+      variantSelections,
       removedIngredients: [],
       selectedExtras: [],
-      friesQuantity: burger.default_fries_quantity ?? 1,
+      friesQuantity,
       isVeggie: /veggie/i.test(burger.name),
     };
 
@@ -64,13 +86,19 @@ export function useBurgerSelection(meatExtra?: { price: number } | null) {
         if (b.id !== id) return b;
 
         const newMeatCount = Math.max(1, b.meatCount + delta);
-        const meatDiff = newMeatCount - (b.burger.default_meat_quantity ?? 2); // ✅
-        const meatPriceAdjustment = meatExtra ? meatDiff * meatExtra.price : 0;
+        const { variantSelections, meatPriceAdjustment, friesPriceAdjustment } =
+          buildBurgerVariantSelections(
+            burgerVariantGroups?.[b.burger.id],
+            newMeatCount,
+            b.friesQuantity,
+          );
 
         return {
           ...b,
           meatCount: newMeatCount,
           meatPriceAdjustment,
+          friesPriceAdjustment,
+          variantSelections,
         };
       }),
     );
@@ -129,9 +157,21 @@ export function useBurgerSelection(meatExtra?: { price: number } | null) {
     setSelectedBurgers((prev) =>
       prev.map((b) => {
         if (b.id !== id) return b;
+
+        const newFriesQuantity = Math.max(0, b.friesQuantity + delta);
+        const { variantSelections, meatPriceAdjustment, friesPriceAdjustment } =
+          buildBurgerVariantSelections(
+            burgerVariantGroups?.[b.burger.id],
+            b.meatCount,
+            newFriesQuantity,
+          );
+
         return {
           ...b,
-          friesQuantity: Math.max(0, b.friesQuantity + delta),
+          friesQuantity: newFriesQuantity,
+          meatPriceAdjustment,
+          friesPriceAdjustment,
+          variantSelections,
         };
       }),
     );

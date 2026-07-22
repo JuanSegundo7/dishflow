@@ -9,8 +9,11 @@ import { AppSidebar } from "./sidebar";
 
 export function SidebarLayout({
   children,
+  activeServiceKeys,
 }: Readonly<{
   children: React.ReactNode;
+  /** Active service keys for sidebar gating; `null` disables gating (fail-open). */
+  activeServiceKeys?: string[] | null;
 }>) {
   const { setOpen, isMobile } = useSidebar();
   const timeoutRef = useRef<NodeJS.Timeout>();
@@ -39,7 +42,7 @@ export function SidebarLayout({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.1, ease: "easeInOut" }}
       >
-        <AppSidebar />
+        <AppSidebar activeServiceKeys={activeServiceKeys} />
       </motion.div>
       <SidebarInset>
         <main className="flex flex-1 flex-col overflow-y-auto p-4 md:p-2 container mx-auto">
