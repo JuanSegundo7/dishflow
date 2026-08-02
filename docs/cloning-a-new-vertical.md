@@ -36,65 +36,42 @@ entitlements API itself is not part of this phase's scope.
 
 The control-panel repo (`solvifylabs/control-panel`) is the agency's admin
 panel tracking every client project, independent of Dishflow's own
-database. To onboard a new business:
+database. Onboarding a new business is a single step there: on the
+Proyectos page, "Nuevo proyecto" opens a 4-step wizard
+(`components/projects/onboard-project-dialog.tsx`, `POST
+/api/projects/onboard`) that in one submit creates the `projects` row
+(name/slug/description **and a required `category`** — the wizard doesn't
+let you skip it or fall back to `'otro'`), its first `subscriptions` row,
+its `services` rows, and a `project_api_keys` entry, with automatic
+rollback if any step fails. The success screen shows the plaintext API key
+once and a ready-to-paste `.env.local` block
+(`components/projects/env-handoff-card.tsx`) — copy that into the new
+Dishflow deployment's environment.
 
-1. Insert a `projects` row for it — following the existing pattern used for
-   Jebbs in `control-panel/scripts/002-seed-data.sql` — including a real
-   `category` value (e.g. `'sushi'`) on the `projects` table. That column
-   was added by `control-panel/scripts/003-project-business-details.sql`
-   with a CHECK constraint matching the exact same 6 slugs Dishflow's
-   `VerticalCategorySlug` type declares (`hamburgueseria`, `pizzeria`,
-   `sushi`, `panaderia`, `cafeteria`, `otro`) — the two enums are meant to
-   stay in lockstep.
-2. Insert its `plans`/`subscriptions` rows (same pattern — see
-   `002-seed-data.sql`'s `plans`/`subscriptions` inserts).
-3. Insert its `services` rows for whatever services this business actually
-   gets (dashboard, ticket printing, stock management, etc. — see the same
-   seed file).
-4. Generate its API key via the existing `project_api_keys` flow
-   (`control-panel/lib/api-keys.ts`, `control-panel/app/api/projects/[id]/api-keys`)
-   and hand it to the new Dishflow deployment as `CONTROL_PANEL_API_KEY`.
+(The old manual sequence — hand-written SQL for the subscription, one
+"Agregar servicio" dialog click per service, a separate "Generar API key"
+click — still works for editing an existing project, but new businesses
+should go through the wizard.)
 
-## 3. THE #1 OPEN GAP — `category` is not in the entitlements response yet
+## 3. `category` reaches Dishflow — resolveVertical() is what consumes it
 
-**This is the single most important loose end in the entire vertical-switching
-mechanism, and it will silently break every new clone until it's fixed.**
+`control-panel/app/api/v1/entitlements/route.ts` sends `category` on every
+response (sourced from `projects.category`), and Dishflow's
+`lib/verticals/index.ts` exports a pure, synchronous `resolveVertical()`
+that turns it into a `VerticalDefinition`. `app/(dashboard)/layout.tsx`
+calls this once per request — reusing the entitlements fetch it already
+makes for the billing gate, not a second fetch — and hands the result down
+via `VerticalProvider` (`components/providers/vertical-provider.tsx`), so
+any client page reads it with `useVertical()`.
 
-Verified directly in this session, both sides of the wire:
+Fails open to `burgerVertical` whenever the vertical can't be determined
+(entitlements unreachable/misconfigured, `category` missing, or an
+unrecognized slug) — see `resolveVertical()`'s own doc comment for the
+full list. This is deliberate, not a bug: an unrelated control-panel outage
+should never turn into a broken/blank UI for a paying customer.
 
-- **control-panel side**: the `projects` table already has a real,
-  populated `category` column (`Project.category: ProjectCategory` in
-  `control-panel/lib/types/index.ts`, added by
-  `scripts/003-project-business-details.sql`). But
-  `control-panel/app/api/v1/entitlements/route.ts` builds its response's
-  `project` object as:
-
-  ```ts
-  project: { slug: project.slug, name: project.name, status: project.status },
-  ```
-
-  — `category` is fetched from the DB (it's part of the `projects` row
-  selected earlier in that same handler) but never copied into the response
-  body. It is silently dropped.
-
-- **Dishflow side**: `lib/entitlements.ts`'s `EntitlementsResponse.project.category`
-  is already typed as optional (`category?: string`) with a comment flagging
-  exactly this — the field doesn't exist in the real response today. And
-  `lib/verticals/index.ts`'s `getActiveVertical()` fails open to
-  `burgerVertical` whenever `category` is missing or unrecognized.
-
-**Net effect**: today, EVERY Dishflow deployment — sushi, pizza, whatever —
-resolves to `burgerVertical` in production, regardless of its real
-`projects.category` value in control-panel, because the field never makes
-it across the wire. `sushiVertical` existing in the registry (this phase's
-work) changes nothing about that until this is fixed.
-
-**Fix required (out of scope for this phase — different repo)**: add
-`category: project.category` to the `project` object in
-`control-panel/app/api/v1/entitlements/route.ts`'s response body. Until
-that one-line change ships, do not expect a sushi (or any non-burger)
-clone to actually render sushi-flavored UI in production — it will look
-and behave exactly like a burger deployment.
+Not everything reads from the resolved vertical yet — see §4 below for
+what's still hardcoded.
 
 ## 4. Known follow-up work from Phase 6 (not silently forgotten)
 
@@ -112,21 +89,21 @@ above:
    adapter in requires building that switching mechanism first, and doing
    so should happen in the SAME pass as finally extracting the burger
    builder — not sushi now, burger later.
-2. **Combos are not generalized.** `sushiVertical.features.hasCombos` is
-   `false`, but this flag is currently documentation-only: grepping the app
-   finds zero places outside `lib/verticals/*.ts` that read `hasCombos` to
-   hide the Combos nav link or route. A vertical with `hasCombos: false`
-   today still gets a fully-functional (if conceptually inapplicable)
-   Combos page. Building that hiding logic — and, separately, generalizing
-   combos to work meaningfully for non-burger verticals — was explicitly
-   deferred out of this phase.
+2. **Combos are gated but not generalized.** `hasCombos` now hides the
+   Combos nav entry (`components/layout/sidebar.tsx`) and skips the Combos
+   step in the order wizard (`components/order-wizard/order-wizard-drawer.tsx`)
+   when false. The route itself (`app/(dashboard)/combos/page.tsx`) is
+   still reachable by direct URL, and combo slots are still hardcoded to
+   the burger shape (`slot_type: "burger"`, `burgers_default_meat_quantity`,
+   etc.) underneath — generalizing combos to work meaningfully for a
+   non-burger vertical (e.g. "2 rolls + bebida") was explicitly deferred,
+   only the navigation gating was built.
 
 ## Summary checklist for a new clone
 
 - [ ] Provision Supabase project, run `scripts/000` → `scripts/031`
 - [ ] Run the vertical's seed script (e.g. `scripts/040-seed-from-vertical.sql` for sushi)
 - [ ] Point Dishflow env vars at the new Supabase project
-- [ ] Seed the business in control-panel (`projects` + `category` + `plans`/`subscriptions` + `services`)
-- [ ] Generate and configure its `CONTROL_PANEL_API_KEY`
-- [ ] **Confirm control-panel's entitlements route now returns `project.category` before trusting `getActiveVertical()` in production** (see §3 — not done as of this writing)
+- [ ] Run the onboarding wizard in control-panel (Proyectos → "Nuevo proyecto") — sets `category`, plan, and services in one step
+- [ ] Copy the wizard's success-screen env block into the new deployment's `.env.local` (`CONTROL_PANEL_API_URL`, `CONTROL_PANEL_API_KEY`, and generate a fresh per-deployment `COOKIE_SIGNING_SECRET`)
 - [ ] If the vertical needs its own order-wizard flow, build the adapter-switching mechanism first (see §4.1) — don't assume `sushi-piece-selector.tsx` is live just because it exists

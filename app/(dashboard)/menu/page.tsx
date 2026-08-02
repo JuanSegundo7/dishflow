@@ -50,9 +50,15 @@ import type { Product } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { useImageUpload } from "@/lib/hooks/use-image-upload";
-import { burgerVertical } from "@/lib/verticals/burger";
+import { useVertical } from "@/components/providers/vertical-provider";
 
 export default function MenuPage() {
+  // VerticalLabels has no grammatical-gender field (productNoun is
+  // "hamburguesa" for burger, "roll" for sushi — feminine vs masculine).
+  // Copy below is phrased to avoid articles/adjectives that would need to
+  // agree with productNoun's gender ("Agregar X", not "Nueva X"), rather
+  // than hardcode Spanish gender rules the vertical data doesn't model.
+  const vertical = useVertical();
   const { data: burgers, isLoading } = useProducts();
   const createBurger = useCreateProduct();
   const updateBurger = useUpdateProduct();
@@ -211,8 +217,8 @@ export default function MenuPage() {
 
       setDialogOpen(false);
     } catch (error) {
-      console.error("Error saving burger:", error);
-      alert("Error al guardar hamburguesa");
+      console.error("Error saving product:", error);
+      alert("Error al guardar el producto");
     }
   };
 
@@ -241,8 +247,8 @@ export default function MenuPage() {
   return (
     <section className="flex h-screen flex-col">
       <Header
-        title={burgerVertical.labels.pages.menu.title}
-        subtitle={burgerVertical.labels.pages.menu.subtitle}
+        title={vertical.labels.pages.menu.title}
+        subtitle={vertical.labels.pages.menu.subtitle}
       />
 
       <div className="flex-1 overflow-auto p-6 md:py-6 md:px-0">
@@ -250,14 +256,14 @@ export default function MenuPage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              {burgers?.length || 0} hamburguesas{" "}
+              {burgers?.length || 0} {vertical.labels.productNounPlural}{" "}
               {burgers &&
                 `(${burgers.filter((b) => b.is_available).length} disponibles)`}
             </p>
           </div>
           <Button onClick={handleOpenCreate}>
             <Plus className="mr-2 h-4 w-4" />
-            Nueva hamburguesa
+            Agregar {vertical.labels.productNoun}
           </Button>
         </div>
 
@@ -384,13 +390,15 @@ export default function MenuPage() {
         ) : (
           <div className="py-20 text-center">
             <ImageIcon className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-            <h3 className="mb-2 text-lg font-semibold">No hay hamburguesas</h3>
+            <h3 className="mb-2 text-lg font-semibold">
+              No hay {vertical.labels.productNounPlural}
+            </h3>
             <p className="mb-4 text-sm text-muted-foreground">
-              Comienza creando tu primera hamburguesa
+              Todavía no cargaste productos en el menú
             </p>
             <Button onClick={handleOpenCreate}>
               <Plus className="mr-2 h-4 w-4" />
-              Crear primera hamburguesa
+              Agregar {vertical.labels.productNoun}
             </Button>
           </div>
         )}
@@ -401,12 +409,12 @@ export default function MenuPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingBurger ? "Editar hamburguesa" : "Nueva hamburguesa"}
+              {editingBurger ? `Editar ${vertical.labels.productNoun}` : `Agregar ${vertical.labels.productNoun}`}
             </DialogTitle>
             <DialogDescription>
               {editingBurger
-                ? "Modifica los datos de la hamburguesa"
-                : "Completa los datos para crear una nueva hamburguesa"}
+                ? "Modificá los datos del producto"
+                : "Completá los datos para agregar un nuevo producto al menú"}
             </DialogDescription>
           </DialogHeader>
 
@@ -502,7 +510,11 @@ export default function MenuPage() {
             {/* Default Meat & Fries */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="meat">Medallones por defecto</Label>
+                {/* No VerticalLabels field maps to "meat count" today — the
+                    "Medallones"/MEAT_VARIANT_GROUP_LABEL concept lives in
+                    lib/utils/variant-pricing.ts, structural work deferred
+                    alongside the order-wizard adapter, not plain copy. */}
+                <Label htmlFor="meat">Unidad principal por defecto</Label>
                 <Input
                   id="meat"
                   type="number"
@@ -517,7 +529,9 @@ export default function MenuPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="fries">Papas por defecto</Label>
+                <Label htmlFor="fries">
+                  {vertical.labels.variantGroupLabels.fries} por defecto
+                </Label>
                 <Input
                   id="fries"
                   type="number"
@@ -542,7 +556,7 @@ export default function MenuPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, description: e.target.value })
                 }
-                placeholder="Deliciosa hamburguesa con..."
+                placeholder="Descripción breve del producto..."
                 rows={3}
               />
             </div>
@@ -619,7 +633,7 @@ export default function MenuPage() {
                   ? "Guardando..."
                   : editingBurger
                     ? "Guardar cambios"
-                    : "Crear hamburguesa"}
+                    : `Agregar ${vertical.labels.productNoun}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -629,13 +643,13 @@ export default function MenuPage() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar hamburguesa</AlertDialogTitle>
+            <AlertDialogTitle>Eliminar {vertical.labels.productNoun}</AlertDialogTitle>
             <AlertDialogDescription>
               ¿Estás seguro de eliminar "{deletingBurger?.name}"?
               <br />
               <span className="text-sm text-muted-foreground mt-2 block">
-                Si esta hamburguesa tiene pedidos asociados, no se podrá
-                eliminar. En ese caso, puedes ocultarla usando el botón de
+                Si este producto tiene pedidos asociados, no se podrá
+                eliminar. En ese caso, podés ocultarlo usando el botón de
                 "Ocultar".
               </span>
             </AlertDialogDescription>

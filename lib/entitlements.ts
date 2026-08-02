@@ -14,16 +14,15 @@ export interface EntitlementsResponse {
     name: string;
     status: string;
     /**
-     * ASSUMPTION (Phase 0 vertical scaffolding, lib/verticals/index.ts):
-     * this field does NOT exist yet in the real control-panel
-     * `/api/v1/entitlements` response as of this writing (checked the
-     * control-panel repo's route handler and docs/entitlements-api.md —
-     * neither includes it), nor was it previously part of this type. It is
-     * added here, optional, purely so lib/verticals/index.ts has something
-     * to read once the control-panel starts sending it. Every existing
-     * caller of getEntitlements() is unaffected (structural typing, extra
-     * optional field). Do not treat a missing/undefined value as anything
-     * other than "unknown vertical" — see getActiveVertical()'s fail-open
+     * control-panel's `/api/v1/entitlements` route sends this on every
+     * response (`app/api/v1/entitlements/route.ts`), sourced from
+     * `projects.category`. Consumed by `lib/verticals/index.ts` to resolve
+     * which VerticalDefinition this deployment renders — see
+     * `resolveVertical()`. Kept optional here (not required) as a defensive
+     * measure: an older/misconfigured control-panel deployment, or a key
+     * pointing at a project row created before `category` existed, could
+     * still omit it. Never treat a missing/unrecognized value as anything
+     * other than "unknown vertical" — see resolveVertical()'s fail-open
      * behavior.
      */
     category?: string;

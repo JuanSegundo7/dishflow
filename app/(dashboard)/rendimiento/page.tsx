@@ -35,6 +35,7 @@ import {
 } from "@/lib/hooks/orders/use-orders-history";
 import { formatCurrency } from "@/lib/utils/format";
 import { ExternalIncomePanel } from "@/components/analytics/external-income-panel";
+import { useVertical } from "@/components/providers/vertical-provider";
 import {
   ChartContainer,
   ChartTooltip,
@@ -133,6 +134,7 @@ const RANK_CONFIG = [
 ];
 
 export default function AnalyticsPage() {
+  const vertical = useVertical();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [customRange, setCustomRange] = useState<{ from: Date; to: Date } | undefined>(undefined);
@@ -265,7 +267,10 @@ export default function AnalyticsPage() {
 
   return (
     <section className="flex h-screen flex-col">
-      <Header title="Rendimiento" subtitle="Análisis de ventas" />
+      <Header
+        title={vertical.labels.pages.rendimiento.title}
+        subtitle={vertical.labels.pages.rendimiento.subtitle}
+      />
 
       <div className="flex-1 overflow-auto py-4">
         {/* Period selector */}
@@ -427,6 +432,19 @@ export default function AnalyticsPage() {
                 ))}
               </div>
             ) : (
+              // NOT sourced from vertical.rendimiento.tiles despite both
+              // verticals already declaring one (burger.ts/sushi.ts) — the
+              // tile *labels* could be swapped today, but the underlying
+              // productStats object (useProductStats(), lib/hooks/orders/
+              // use-orders-history.ts) is still hardcoded to burger's exact
+              // fields (totalBurgers/totalMedallones/...) regardless of
+              // vertical. Reading vertical.rendimiento.tiles[i].key (e.g.
+              // "totalRolls" for sushi) against that object would silently
+              // read undefined and render real-looking zeros instead of
+              // real numbers — worse than today's honestly-burger-labeled
+              // tiles. Wiring this needs the ProductStats generalization
+              // first; that's structural work, not a copy swap (tracked
+              // alongside the order-wizard adapter work).
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
                 {[
                   { label: "Burgers", value: productStats?.totalBurgers ?? 0, emoji: "🍔" },

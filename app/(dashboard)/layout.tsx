@@ -8,6 +8,8 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "sonner";
 import { BillingBlock } from "@/components/billing/billing-block";
 import { getEntitlements } from "@/lib/entitlements";
+import { resolveVertical } from "@/lib/verticals";
+import { VerticalProvider } from "@/components/providers/vertical-provider";
 
 export default async function DashboardLayout({
   children,
@@ -31,21 +33,30 @@ export default async function DashboardLayout({
       ? entitlements.data.services.filter((service) => service.active).map((service) => service.key)
       : null;
 
+  // Resolve once here (reusing the entitlements fetch above, not a second
+  // one) and hand it down via context so client pages read it with
+  // useVertical() instead of each needing their own server round-trip.
+  const vertical = resolveVertical(
+    entitlements.status === "known" ? entitlements.data.project.category : undefined,
+  );
+
   return (
     <ThemeProvider>
       <QueryProvider>
-        {isBlocked && entitlements.status === "known" ? (
-          <BillingBlock
-            reason={entitlements.data.access.reason as "past_due" | "suspended" | "no_subscription"}
-            billing={entitlements.data.billing}
-          />
-        ) : (
-          <SidebarProvider defaultOpen={false}>
-            <SidebarLayout activeServiceKeys={activeServiceKeys}>{children}</SidebarLayout>
-            <Toaster richColors position="top-right" />
-          </SidebarProvider>
-        )}
-        <Analytics />
+        <VerticalProvider vertical={vertical}>
+          {isBlocked && entitlements.status === "known" ? (
+            <BillingBlock
+              reason={entitlements.data.access.reason as "past_due" | "suspended" | "no_subscription"}
+              billing={entitlements.data.billing}
+            />
+          ) : (
+            <SidebarProvider defaultOpen={false}>
+              <SidebarLayout activeServiceKeys={activeServiceKeys}>{children}</SidebarLayout>
+              <Toaster richColors position="top-right" />
+            </SidebarProvider>
+          )}
+          <Analytics />
+        </VerticalProvider>
       </QueryProvider>
     </ThemeProvider>
   );

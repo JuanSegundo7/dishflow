@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { SERVICE_NAV_HREFS } from "@/lib/service-nav-map";
 import Image from "next/image";
 import { Pacifico, Baloo_2 } from "next/font/google";
+import { useVertical } from "@/components/providers/vertical-provider";
 
 const baloo = Baloo_2({
   subsets: ["latin"],
@@ -47,7 +48,11 @@ const navigation = [
   { name: "Rendimiento", href: "/rendimiento", icon: BarChart3 },
   { name: "Clientes", href: "/clientes", icon: User },
   { name: "Menú", href: "/menu", icon: UtensilsCrossed },
-  { name: "Combos", href: "/combos", icon: Component },
+  // Combos is the first (and so far only) nav item gated by a
+  // VerticalDefinition feature flag rather than a control-panel service
+  // key — see requiresCombos below. hasCombos: false today only for sushi;
+  // every other vertical still falls back to burgerVertical (hasCombos: true).
+  { name: "Combos", href: "/combos", icon: Component, requiresCombos: true },
   { name: "Extras", href: "/extras", icon: Plus },
   { name: "Precios", href: "/precios", icon: DollarSign },
   { name: "Mi Plan", href: "/plan", icon: CreditCard },
@@ -69,7 +74,10 @@ function isNavItemVisible(href: string, activeServiceKeys?: string[] | null): bo
 export function AppSidebar({ activeServiceKeys }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const visibleNavigation = navigation.filter((item) => isNavItemVisible(item.href, activeServiceKeys));
+  const vertical = useVertical();
+  const visibleNavigation = navigation
+    .filter((item) => isNavItemVisible(item.href, activeServiceKeys))
+    .filter((item) => !item.requiresCombos || vertical.features.hasCombos);
 
   async function handleLogout() {
     const supabase = createClient()

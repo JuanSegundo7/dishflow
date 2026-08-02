@@ -7,12 +7,13 @@ INSERT INTO burgers (name, description, base_price, ingredients, is_available) V
   ('Sample Item 1', 'Placeholder description for a menu item', 1000.00, ARRAY['ingredient 1', 'ingredient 2'], true),
   ('Sample Item 2', 'Placeholder description for a menu item', 1200.00, ARRAY['ingredient 1', 'ingredient 2', 'ingredient 3'], true);
 
--- Sample extras (extras, drinks, fries, combos)
+-- Sample extras (extras, drinks, fries, sides)
+-- Note: combos are no longer an `extras.category` value — they're seeded via
+-- the `combos`/`combo_slots`/`combo_slots_rules` tables (see 000-baseline-schema.sql).
 INSERT INTO extras (name, category, price, is_available) VALUES
   ('Sample Extra', 'extra', 100.00, true),
   ('Sample Drink', 'drink', 200.00, true),
-  ('Sample Fries', 'fries', 300.00, true),
-  ('Sample Combo', 'combo', 500.00, true);
+  ('Sample Fries', 'fries', 300.00, true);
 
 -- Sample customers (optional demo data, safe to remove)
 INSERT INTO customers (name, address, phone) VALUES

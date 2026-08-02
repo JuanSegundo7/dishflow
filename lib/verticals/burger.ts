@@ -16,7 +16,10 @@ import type { VerticalDefinition } from "./types";
  *   - combos: components/order-wizard/steps/combos-step.tsx +
  *     lib/hooks/use-combos.ts
  *
- * Nothing imports this yet — see lib/verticals/index.ts.
+ * Resolved via lib/verticals/index.ts's resolveVertical() and read by
+ * client pages through useVertical() (components/providers/
+ * vertical-provider.tsx) — this is the fallback vertical whenever the
+ * active category is unknown, missing, or unrecognized.
  */
 export const burgerVertical: VerticalDefinition = {
   key: "hamburgueseria",

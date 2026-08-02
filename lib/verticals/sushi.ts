@@ -6,11 +6,12 @@ import type { VerticalDefinition } from "./types";
  * This is the first VerticalDefinition authored for a business type OTHER
  * than burgers, proving the products/variant_groups/variant_options model
  * built in Phases 1-4 genuinely generalizes past the vertical it was
- * extracted from. Nothing in the live app resolves to this vertical yet
- * (see the scope note in registry.ts and lib/verticals/index.ts's own
- * "Phase 0 scaffolding" header) — this file only makes `sushi` resolve to a
- * REAL definition instead of the burgerVertical fallback every other
- * unmapped category slug still uses.
+ * extracted from. A control-panel project with `category: "sushi"` now
+ * resolves to this definition end-to-end (lib/verticals/index.ts's
+ * resolveVertical(), read via useVertical() — see the scope note in
+ * registry.ts for which other category slugs are still placeholders) —
+ * this file makes `sushi` resolve to a REAL definition instead of the
+ * burgerVertical fallback every other unmapped category slug still uses.
  *
  * A sushi place sells by PIECE COUNT (4/8 piezas per roll), not by
  * per-ingredient customization the way a burger is built — hence
@@ -40,13 +41,15 @@ import type { VerticalDefinition } from "./types";
  *   is the strongest argument for actually building the "fully dynamic
  *   variant_groups list" types.ts already anticipates.
  * - `hasCombos: false` — sushi combos (e.g. "2 rolls + bebida") are a real,
- *   common product for this vertical, but nothing about combos was scoped
- *   into this phase (deliberately deferred per the task). This flag
- *   currently documents intent only: grepping the app for `hasCombos` turns
- *   up zero read sites outside lib/verticals/*.ts — no sidebar/nav/page
- *   today hides the Combos link or route when a vertical sets this false.
- *   That is a known gap, not something this phase builds a fix for (see
- *   docs/cloning-a-new-vertical.md's follow-up section).
+ *   common product for this vertical, but generalizing combos themselves
+ *   was never scoped (deliberately deferred). This flag now DOES drive
+ *   behavior: components/layout/sidebar.tsx hides the Combos nav entry and
+ *   components/order-wizard/order-wizard-drawer.tsx skips the Combos step
+ *   entirely when it's false. The route (app/(dashboard)/combos/page.tsx)
+ *   is still reachable by direct URL, and combo slots are still
+ *   burger-shaped under the hood — only navigation to it is gated. See
+ *   docs/cloning-a-new-vertical.md's follow-up section for what's still
+ *   open.
  */
 export const sushiVertical: VerticalDefinition = {
   key: "sushi",

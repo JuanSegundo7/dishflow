@@ -35,6 +35,7 @@ import {
 import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { Combo } from "@/lib/types/combo-types";
+import { useVertical } from "@/components/providers/vertical-provider";
 
 /* -------------------------------------------------- */
 
@@ -56,6 +57,7 @@ const EMPTY_FORM = {
 };
 
 export default function CombosPage() {
+  const vertical = useVertical();
   const { data: combos, isLoading, isError } = useAllCombos();
   const createCombo = useCreateCombo();
   const updateComboWithSlots = useUpdateComboWithSlots();
@@ -187,8 +189,8 @@ export default function CombosPage() {
   return (
     <div className="flex h-screen flex-col">
       <Header
-        title="Combos"
-        subtitle="Creá y administrá combos reutilizando items existentes"
+        title={vertical.labels.pages.combos.title}
+        subtitle={vertical.labels.pages.combos.subtitle}
       />
 
       <div className="p-4 flex justify-end bg-background">

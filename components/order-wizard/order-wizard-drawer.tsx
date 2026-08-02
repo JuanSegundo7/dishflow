@@ -22,6 +22,7 @@ import { formatCurrency } from "@/lib/utils/format";
 import { EditCustomerModal } from "../orders/edit/edit-customer-modal";
 import { useOrderWizard } from "./hooks/use-order-wizard";
 import { useMemo, useEffect } from "react";
+import { useVertical } from "@/components/providers/vertical-provider";
 
 import {
   CustomerStep,
@@ -51,6 +52,16 @@ export function OrderWizardDrawer({
 }: OrderWizardDrawerProps) {
   const [step, setStep] = useState<WizardStep>("customer");
   const [customerPage, setCustomerPage] = useState(1);
+
+  // First real behavioral use of a VerticalFeatureFlags flag (see
+  // lib/verticals/types.ts) — a vertical with hasCombos: false (today:
+  // sushi) skips the Combos step entirely, not just hides its nav link
+  // (components/layout/sidebar.tsx). This is a scoped, contained change:
+  // it does NOT touch the burger-builder step itself or introduce any
+  // adapter-switching mechanism for orderFlow — that's separate, larger
+  // work tracked in docs/cloning-a-new-vertical.md §4.1.
+  const { features } = useVertical();
+  const hasCombos = features.hasCombos;
 
   const isSubmittingRef = useRef(false);
 
@@ -216,7 +227,7 @@ export function OrderWizardDrawer({
   // ================= STEP DEFINITIONS =================
   const steps = [
     { key: "customer", label: "Cliente" },
-    { key: "combos", label: "Combos" },
+    ...(hasCombos ? [{ key: "combos", label: "Combos" }] : []),
     { key: "burgers", label: "Hamburguesas" },
     { key: "sides", label: "Acomp." },
     { key: "summary", label: "Resumen" },
@@ -226,7 +237,7 @@ export function OrderWizardDrawer({
 
   // ================= NAVIGATION =================
   const goNext = () => {
-    if (step === "customer") setStep("combos");
+    if (step === "customer") setStep(hasCombos ? "combos" : "burgers");
     else if (step === "combos") setStep("burgers");
     else if (step === "burgers") setStep("sides");
     else if (step === "sides") setStep("summary");
@@ -234,7 +245,7 @@ export function OrderWizardDrawer({
 
   const goBack = () => {
     if (step === "combos") setStep("customer");
-    else if (step === "burgers") setStep("combos");
+    else if (step === "burgers") setStep(hasCombos ? "combos" : "customer");
     else if (step === "sides") setStep("burgers");
     else if (step === "summary") setStep("sides");
   };

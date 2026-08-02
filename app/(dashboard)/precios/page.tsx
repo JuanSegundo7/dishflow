@@ -13,7 +13,7 @@ import { useProducts, useAddonProducts, useProductWithVariants } from "@/lib/hoo
 import { useUpdateProduct } from "@/lib/hooks/use-products-crud";
 import { formatCurrency } from "@/lib/utils/format";
 import type { ExtraCategory } from "@/lib/types";
-import { burgerVertical } from "@/lib/verticals/burger";
+import { useVertical } from "@/components/providers/vertical-provider";
 
 const DEFAULT_DELIVERY_FEE_KEY = "restaurant_default_delivery_fee";
 
@@ -87,6 +87,7 @@ function BurgerVariantsPreview({ productId }: { productId: string }) {
 }
 
 export default function PricingPage() {
+  const vertical = useVertical();
   const { data: burgers, isLoading: burgersLoading } = useProducts();
   const { data: extras, isLoading: extrasLoading } = useAddonProducts();
   const updateBurger = useUpdateProduct();
@@ -147,8 +148,8 @@ export default function PricingPage() {
   return (
     <div className="flex h-screen flex-col">
       <Header
-        title={burgerVertical.labels.pages.precios.title}
-        subtitle={burgerVertical.labels.pages.precios.subtitle}
+        title={vertical.labels.pages.precios.title}
+        subtitle={vertical.labels.pages.precios.subtitle}
       />
 
       <div className="flex-1 overflow-auto py-6 space-y-6">

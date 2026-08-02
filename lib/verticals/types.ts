@@ -1,17 +1,16 @@
 /**
- * Vertical configuration layer — Phase 0 scaffolding.
+ * Vertical configuration layer.
  *
- * Dishflow is currently hardwired to burgers (table `burgers`, FK
- * `burger_id`, CHECK enums `burger/extra/drink/fries`). The long-term goal
- * is to genericize the schema into a `products` + `variant_groups` +
- * `variant_options` model so one codebase can serve burger/sushi/pizza/etc
- * verticals, with vertical-specific behavior isolated behind the
- * `VerticalDefinition` shape declared here.
+ * The `products` + `variant_groups` + `variant_options` schema (see
+ * dishflow-generic-products-refactor) lets one codebase serve
+ * burger/sushi/pizza/etc verticals, with vertical-specific behavior
+ * isolated behind the `VerticalDefinition` shape declared here.
  *
- * IMPORTANT: this module is scaffolding only. Nothing in the app imports it
- * yet — see lib/verticals/burger.ts for the burger vertical encoded as data,
- * and lib/verticals/index.ts for how a deployment's active vertical will
- * eventually be resolved from the control-panel entitlements response.
+ * See lib/verticals/burger.ts and lib/verticals/sushi.ts for the two
+ * verticals encoded as data today, lib/verticals/index.ts for
+ * resolveVertical() (the pure resolution logic, safe for client import),
+ * and components/providers/vertical-provider.tsx for how a deployment's
+ * active vertical reaches client pages via useVertical().
  *
  * `key` values must match the control-panel's `projects.category` column
  * slugs verbatim: "hamburgueseria" | "pizzeria" | "sushi" | "panaderia" |

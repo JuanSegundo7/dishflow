@@ -45,13 +45,13 @@ import {
 import type { ExtraCategory } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-import { burgerVertical } from "@/lib/verticals/burger";
-
-const categoryLabels = burgerVertical.labels.variantGroupLabels;
+import { useVertical } from "@/components/providers/vertical-provider";
 
 const PAGE_SIZE = 12;
 
 export default function ExtrasPage() {
+  const vertical = useVertical();
+  const categoryLabels = vertical.labels.variantGroupLabels;
   const { data: extras, isLoading } = useAddonProducts();
   const createExtra = useCreateProduct();
   const updateExtra = useUpdateProduct();
@@ -153,8 +153,8 @@ export default function ExtrasPage() {
   return (
     <div className="flex h-screen flex-col">
       <Header
-        title={burgerVertical.labels.pages.extras.title}
-        subtitle={burgerVertical.labels.pages.extras.subtitle}
+        title={vertical.labels.pages.extras.title}
+        subtitle={vertical.labels.pages.extras.subtitle}
       />
 
       {/* FILTER BAR */}
@@ -172,16 +172,16 @@ export default function ExtrasPage() {
                 Todos
               </TabsTrigger>
               <TabsTrigger value="extra" className="rounded-full px-4 text-sm">
-                Extras
+                {categoryLabels.extra}
               </TabsTrigger>
               <TabsTrigger value="drink" className="rounded-full px-4 text-sm">
-                Bebidas
+                {categoryLabels.drink}
               </TabsTrigger>
               <TabsTrigger value="fries" className="rounded-full px-4 text-sm">
-                Papas
+                {categoryLabels.fries}
               </TabsTrigger>
               <TabsTrigger value="sides" className="rounded-full px-4 text-sm">
-                Acompañamientos
+                {categoryLabels.sides}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -330,10 +330,10 @@ export default function ExtrasPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="extra">Extra</SelectItem>
-                  <SelectItem value="drink">Bebida</SelectItem>
-                  <SelectItem value="fries">Papas</SelectItem>
-                  <SelectItem value="sides">Acompañamiento</SelectItem>
+                  <SelectItem value="extra">{categoryLabels.extra}</SelectItem>
+                  <SelectItem value="drink">{categoryLabels.drink}</SelectItem>
+                  <SelectItem value="fries">{categoryLabels.fries}</SelectItem>
+                  <SelectItem value="sides">{categoryLabels.sides}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
