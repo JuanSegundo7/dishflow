@@ -78,17 +78,19 @@ what's still hardcoded.
 Two things were deliberately left undone this phase, on top of the gap
 above:
 
-1. **The sushi order-wizard adapter is built but not wired in.**
-   `components/order-wizard/adapters/sushi-piece-selector.tsx` is a real,
-   working piece-count selector component (reads a product's "Piezas"
-   variant group via `useProductWithVariants`, prices it via
-   `resolveVariantDelta`/`findVariantGroupByLabel`) — but nothing imports
-   it. Phase 3 never extracted the burger builder behind a swappable
-   adapter interface, so there is no live mechanism today that picks a
-   builder UI based on `VerticalDefinition.orderFlow`. Wiring sushi's
-   adapter in requires building that switching mechanism first, and doing
-   so should happen in the SAME pass as finally extracting the burger
-   builder — not sushi now, burger later.
+1. **The sushi order-wizard adapter is now wired in.** `order-wizard-drawer.tsx`
+   reads `useVertical().orderFlow` and renders `SushiStep` (wrapping
+   `components/order-wizard/adapters/sushi-piece-selector.tsx`) for
+   `"piece-selector"`, or `BurgersStep` otherwise (including the
+   not-yet-built `"size-crust-selector"`, which falls back to the burger
+   builder for now). The controller-level contract both flows implement is
+   `OrderFlowAdapter` (`components/order-wizard/adapters/order-flow-adapter.ts`);
+   see `components/order-wizard/hooks/use-sushi-selection.ts` and
+   `OrderPriceCalculator.calculateSushiTotal`/`OrderDataTransformer.
+   transformSushiToOrderItems` for the sushi-side math/payload. Known gap:
+   edit-mode order loading (`services/order-data-loader.ts`) is still
+   burger-shaped only — editing an existing sushi order won't repopulate
+   its line items (create-mode is unaffected).
 2. **Combos are gated but not generalized.** `hasCombos` now hides the
    Combos nav entry (`components/layout/sidebar.tsx`) and skips the Combos
    step in the order wizard (`components/order-wizard/order-wizard-drawer.tsx`)
@@ -106,4 +108,4 @@ above:
 - [ ] Point Dishflow env vars at the new Supabase project
 - [ ] Run the onboarding wizard in control-panel (Proyectos → "Nuevo proyecto") — sets `category`, plan, and services in one step
 - [ ] Copy the wizard's success-screen env block into the new deployment's `.env.local` (`CONTROL_PANEL_API_URL`, `CONTROL_PANEL_API_KEY`, and generate a fresh per-deployment `COOKIE_SIGNING_SECRET`)
-- [ ] If the vertical needs its own order-wizard flow, build the adapter-switching mechanism first (see §4.1) — don't assume `sushi-piece-selector.tsx` is live just because it exists
+- [ ] If the vertical needs a NEW order-wizard flow beyond `"builder-wizard"`/`"piece-selector"` (e.g. `"size-crust-selector"` for pizza), implement an `OrderFlowAdapter` for it (see §4.1) — the switching mechanism itself already exists, only `"piece-selector"` (sushi) has a real flow behind it today

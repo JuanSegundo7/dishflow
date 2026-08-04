@@ -3,6 +3,8 @@ import type { Extra } from "@/lib/types";
 import type { OrderWithItems } from "@/lib/types";
 import { SelectedBurger, SelectedCombo } from "@/lib/types/combo-types";
 import { SelectedSide } from "@/components/order-wizard/hooks/use-side-selection";
+import type { SelectedSushiItem } from "@/lib/types/sushi-types";
+import type { OrderFlow } from "@/lib/verticals";
 
 export function loadOrderIntoWizard(
   order: OrderWithItems,
@@ -11,10 +13,27 @@ export function loadOrderIntoWizard(
   allCombos: any[],
   meatExtra?: { price: number } | null,
   friesExtra?: { price: number } | null,
+  // "piece-selector" (sushi) orderFlow gate — see loadSushiItems below.
+  // Sushi order_items carry the same `kind: "product"` discriminator burger
+  // order_items use (OrderDataTransformer.transformSushiToOrderItems mirrors
+  // transformBurgersToOrderItems here), so without this gate a sushi order
+  // would misfire into loadBurgers and build garbage meat/fries fields off a
+  // product that has none of that. Every other value — including the
+  // unimplemented "size-crust-selector" — falls back to loadBurgers exactly
+  // as before, same as the rest of the app's orderFlow fallback pattern.
+  orderFlow: OrderFlow = "builder-wizard",
 ) {
+  const isSushiFlow = orderFlow === "piece-selector";
+
   return {
     customerData: loadCustomerData(order),
-    burgers: loadBurgers(order, allBurgers, allExtras, meatExtra, friesExtra),
+    // `burgers`/`sushi` are always both present (like `combos`/`sides`
+    // already are) so callers don't need to branch on orderFlow — whichever
+    // flow is inactive just returns [].
+    burgers: isSushiFlow
+      ? []
+      : loadBurgers(order, allBurgers, allExtras, meatExtra, friesExtra),
+    sushi: isSushiFlow ? loadSushiItems(order, allBurgers) : [],
     combos: loadCombos(order, allCombos, allBurgers, allExtras),
     settings: loadSettings(order),
     sides: loadSides(order, allExtras),
@@ -154,6 +173,53 @@ function loadBurgers(
       };
     })
     .filter(Boolean) as SelectedBurger[];
+}
+
+/**
+ * "piece-selector" orderFlow (sushi) counterpart to loadBurgers. Sibling in
+ * spirit, but simple: sushi has no price-freeze/variant-adjustment
+ * complexity (no meat/fries steppers), so `unitPrice` is read straight off
+ * `item.unit_price` and `variantOptionId`/`variantOptionLabel`/`pieceCount`
+ * come straight off `item.customizations` — exactly the shape
+ * OrderDataTransformer.transformSushiToOrderItems writes.
+ */
+function loadSushiItems(
+  order: OrderWithItems,
+  allBurgers: any[],
+): SelectedSushiItem[] {
+  // Same `kind: "product"` discriminator as loadBurgers — see
+  // loadOrderIntoWizard's orderFlow gate above for why only one of
+  // loadBurgers/loadSushiItems ever runs against these items.
+  const sushiItems = order.items.filter((item) => item.kind === "product");
+
+  return sushiItems
+    .map((item) => {
+      const product = allBurgers.find((b) => b.id === item.product_id);
+      if (!product) {
+        console.warn(`Sushi product ${item.product_id} not found`);
+        return null;
+      }
+
+      let customData: any = null;
+      if (item.customizations) {
+        try {
+          customData = JSON.parse(item.customizations);
+        } catch (e) {
+          console.warn("Failed to parse sushi customizations:", e);
+        }
+      }
+
+      return {
+        id: nanoid(),
+        product,
+        quantity: item.quantity,
+        variantOptionId: customData?.variantOptionId ?? null,
+        variantOptionLabel: customData?.variantOptionLabel ?? null,
+        pieceCount: customData?.pieceCount ?? null,
+        unitPrice: item.unit_price,
+      };
+    })
+    .filter(Boolean) as SelectedSushiItem[];
 }
 
 function loadSides(order: OrderWithItems, allExtras: Extra[]): SelectedSide[] {

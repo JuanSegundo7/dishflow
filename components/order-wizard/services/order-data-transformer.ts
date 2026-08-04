@@ -1,5 +1,6 @@
 import type { OrderItemInput } from "@/lib/hooks/orders/use-create-order";
 import { SelectedBurger } from "@/lib/types/combo-types";
+import { SelectedSushiItem } from "@/lib/types/sushi-types";
 import { SelectedSide } from "../hooks/use-side-selection";
 
 interface SelectedComboSlot {
@@ -156,6 +157,41 @@ export class OrderDataTransformer {
             })),
           })),
         ),
+        extras: [],
+      };
+    });
+  }
+
+  /**
+   * "piece-selector" orderFlow (sushi) counterpart to
+   * transformBurgersToOrderItems. `kind: "product"` — same discriminant a
+   * burger line uses (see OrderItemInput's doc comment: `kind` picks what
+   * `product_id` points at, and both a burger and a sushi roll ARE
+   * `products` rows). `variant_selections` is left null: unlike burger's
+   * Medallones/Papas snapshot (which needs variant_group_id/label that
+   * SushiPieceSelection doesn't carry — see its own interface), the spec
+   * for this flow only calls for capturing piece count/label in
+   * `customizations`, not a frozen variant_selections snapshot.
+   */
+  static transformSushiToOrderItems(items: SelectedSushiItem[]): OrderItemInput[] {
+    return items.map((item) => {
+      const customizationData = {
+        variantOptionId: item.variantOptionId,
+        variantOptionLabel: item.variantOptionLabel,
+        pieceCount: item.pieceCount,
+      };
+
+      return {
+        product_id: item.product.id,
+        kind: "product",
+        combo_id: null,
+        burger_name: item.product.name,
+        name_snapshot: item.product.name,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        subtotal: item.unitPrice * item.quantity,
+        customizations: JSON.stringify(customizationData),
+        variant_selections: null,
         extras: [],
       };
     });

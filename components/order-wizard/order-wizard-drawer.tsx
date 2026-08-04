@@ -28,6 +28,7 @@ import {
   CustomerStep,
   CombosStep,
   BurgersStep,
+  SushiStep,
   SummaryStep,
 } from "./steps/index";
 import type { OrderWithItems } from "@/lib/types";
@@ -40,7 +41,10 @@ interface OrderWizardDrawerProps {
   orderToEdit?: OrderWithItems | null;
 }
 
-type WizardStep = "customer" | "combos" | "burgers" | "sides" | "summary";
+// "items" replaces the old "burgers" key: which STEP COMPONENT renders here
+// (BurgersStep vs SushiStep) is now orderFlow-driven — see the render block
+// below — instead of always being the burger builder.
+type WizardStep = "customer" | "combos" | "items" | "sides" | "summary";
 
 const CUSTOMERS_PER_PAGE = 5;
 
@@ -56,12 +60,16 @@ export function OrderWizardDrawer({
   // First real behavioral use of a VerticalFeatureFlags flag (see
   // lib/verticals/types.ts) — a vertical with hasCombos: false (today:
   // sushi) skips the Combos step entirely, not just hides its nav link
-  // (components/layout/sidebar.tsx). This is a scoped, contained change:
-  // it does NOT touch the burger-builder step itself or introduce any
-  // adapter-switching mechanism for orderFlow — that's separate, larger
-  // work tracked in docs/cloning-a-new-vertical.md §4.1.
-  const { features } = useVertical();
+  // (components/layout/sidebar.tsx).
+  const vertical = useVertical();
+  const { features, orderFlow, labels } = vertical;
   const hasCombos = features.hasCombos;
+  // docs/cloning-a-new-vertical.md §4.1's adapter-switching mechanism: the
+  // "items" step renders BurgersStep or SushiStep based on orderFlow.
+  // "size-crust-selector" (future pizza work) isn't built yet — it falls
+  // back to the burger-builder rendering, same as any other unrecognized
+  // value, rather than being its own branch.
+  const isSushiFlow = orderFlow === "piece-selector";
 
   const isSubmittingRef = useRef(false);
 
@@ -130,6 +138,7 @@ export function OrderWizardDrawer({
     allCombos: combos || [],
     allExtras: extras || [],
     burgerVariantGroups,
+    orderFlow,
   });
 
   // ================= RESET AL ABRIR (solo en create) =================
@@ -176,15 +185,20 @@ export function OrderWizardDrawer({
     (acc, b) => acc + b.quantity,
     0,
   );
+  const totalSushiItems = wizard.sushi.selectedItems.reduce(
+    (acc, i) => acc + i.quantity,
+    0,
+  );
   const totalComboItems = wizard.combos.selectedCombos.length;
   const totalSideItems = wizard.sides.selectedSides.reduce(
     (acc, s) => acc + s.quantity,
     0,
   );
-  const totalItems = totalBurgerItems + totalComboItems + totalSideItems;
+  const totalItems =
+    totalBurgerItems + totalSushiItems + totalComboItems + totalSideItems;
 
   const showTotalBar =
-    step === "combos" || step === "burgers" || step === "sides";
+    step === "combos" || step === "items" || step === "sides";
 
   // ================= HANDLERS =================
   const handleClose = (open: boolean) => {
@@ -225,10 +239,20 @@ export function OrderWizardDrawer({
   };
 
   // ================= STEP DEFINITIONS =================
+  // Step label is data-driven off the active vertical's labels
+  // (labels.productNoun/productNounPlural — see lib/verticals/types.ts)
+  // instead of a hardcoded "Hamburguesas" string, so a non-burger vertical
+  // (e.g. sushi's "rolls") gets a correct label automatically. For the
+  // burger vertical this renders the exact same "Hamburguesas" text as
+  // before (productNounPlural: "hamburguesas", capitalized here).
+  const itemsStepLabel =
+    labels.productNounPlural.charAt(0).toUpperCase() +
+    labels.productNounPlural.slice(1);
+
   const steps = [
     { key: "customer", label: "Cliente" },
     ...(hasCombos ? [{ key: "combos", label: "Combos" }] : []),
-    { key: "burgers", label: "Hamburguesas" },
+    { key: "items", label: itemsStepLabel },
     { key: "sides", label: "Acomp." },
     { key: "summary", label: "Resumen" },
   ];
@@ -237,16 +261,16 @@ export function OrderWizardDrawer({
 
   // ================= NAVIGATION =================
   const goNext = () => {
-    if (step === "customer") setStep(hasCombos ? "combos" : "burgers");
-    else if (step === "combos") setStep("burgers");
-    else if (step === "burgers") setStep("sides");
+    if (step === "customer") setStep(hasCombos ? "combos" : "items");
+    else if (step === "combos") setStep("items");
+    else if (step === "items") setStep("sides");
     else if (step === "sides") setStep("summary");
   };
 
   const goBack = () => {
     if (step === "combos") setStep("customer");
-    else if (step === "burgers") setStep(hasCombos ? "combos" : "customer");
-    else if (step === "sides") setStep("burgers");
+    else if (step === "items") setStep(hasCombos ? "combos" : "customer");
+    else if (step === "sides") setStep("items");
     else if (step === "summary") setStep("sides");
   };
 
@@ -354,26 +378,36 @@ export function OrderWizardDrawer({
                 />
               )}
 
-              {step === "burgers" && (
-                <BurgersStep
-                  availableBurgers={burgers || []}
-                  onAddBurger={wizard.burgers.addBurger}
-                  selectedBurgers={wizard.burgers.selectedBurgers}
-                  onRemoveBurger={wizard.burgers.removeBurger}
-                  onUpdateQuantity={wizard.burgers.updateQuantity}
-                  onToggleIngredient={wizard.burgers.toggleIngredient}
-                  onUpdateMeatCount={wizard.burgers.updateMeatCount}
-                  onUpdateFriesQuantity={wizard.burgers.updateFriesQuantity}
-                  onToggleVeggie={wizard.burgers.toggleVeggie}
-                  onToggleExtra={wizard.burgers.toggleExtra}
-                  onUpdateExtraQuantity={wizard.burgers.updateExtraQuantity}
-                  expandedBurger={wizard.burgers.expandedBurger}
-                  onToggleExpanded={wizard.burgers.toggleExpanded}
-                  meatExtra={meatExtra}
-                  friesExtra={friesExtra}
-                  extrasByCategory={extrasByCategory}
-                />
-              )}
+              {step === "items" &&
+                (isSushiFlow ? (
+                  <SushiStep
+                    availableProducts={burgers || []}
+                    selectedItems={wizard.sushi.selectedItems}
+                    onAddItem={wizard.sushi.addItem}
+                    onRemoveItem={wizard.sushi.removeItem}
+                    onUpdateQuantity={wizard.sushi.updateQuantity}
+                    onSelectionChange={wizard.sushi.updateSelection}
+                  />
+                ) : (
+                  <BurgersStep
+                    availableBurgers={burgers || []}
+                    onAddBurger={wizard.burgers.addBurger}
+                    selectedBurgers={wizard.burgers.selectedBurgers}
+                    onRemoveBurger={wizard.burgers.removeBurger}
+                    onUpdateQuantity={wizard.burgers.updateQuantity}
+                    onToggleIngredient={wizard.burgers.toggleIngredient}
+                    onUpdateMeatCount={wizard.burgers.updateMeatCount}
+                    onUpdateFriesQuantity={wizard.burgers.updateFriesQuantity}
+                    onToggleVeggie={wizard.burgers.toggleVeggie}
+                    onToggleExtra={wizard.burgers.toggleExtra}
+                    onUpdateExtraQuantity={wizard.burgers.updateExtraQuantity}
+                    expandedBurger={wizard.burgers.expandedBurger}
+                    onToggleExpanded={wizard.burgers.toggleExpanded}
+                    meatExtra={meatExtra}
+                    friesExtra={friesExtra}
+                    extrasByCategory={extrasByCategory}
+                  />
+                ))}
 
               {step === "sides" && (
                 <SidesStep
@@ -403,6 +437,7 @@ export function OrderWizardDrawer({
                   selectedAddress={selectedAddressObj}
                   newAddressData={wizard.customer.newAddressData}
                   selectedBurgers={wizard.burgers.selectedBurgers}
+                  selectedSushiItems={wizard.sushi.selectedItems}
                   selectedCombos={wizard.combos.selectedCombos}
                   selectedSides={wizard.sides.selectedSides}
                   subtotal={wizard.subtotal}
@@ -453,10 +488,12 @@ export function OrderWizardDrawer({
                       {totalComboItems} combo{totalComboItems > 1 ? "s" : ""}
                     </span>
                   )}
-                  {totalBurgerItems > 0 && (
+                  {(totalBurgerItems > 0 || totalSushiItems > 0) && (
                     <span>
-                      {totalBurgerItems} hamburguesa
-                      {totalBurgerItems > 1 ? "s" : ""}
+                      {totalBurgerItems + totalSushiItems}{" "}
+                      {totalBurgerItems + totalSushiItems > 1
+                        ? labels.productNounPlural
+                        : labels.productNoun}
                     </span>
                   )}
                   {totalSideItems > 0 && <span>{totalSideItems} acomp.</span>}
@@ -519,7 +556,7 @@ export function OrderWizardDrawer({
               </Button>
             )}
 
-            {step === "burgers" && (
+            {step === "items" && (
               <Button onClick={goNext}>
                 Siguiente
                 <ArrowRight className="ml-2 h-4 w-4" />

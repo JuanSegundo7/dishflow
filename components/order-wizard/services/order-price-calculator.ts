@@ -1,4 +1,5 @@
 import { SelectedBurger } from "@/lib/types/combo-types";
+import { SelectedSushiItem } from "@/lib/types/sushi-types";
 import { SelectedSide } from "../hooks/use-side-selection";
 
 interface SelectedComboSlot {
@@ -112,6 +113,21 @@ export class OrderPriceCalculator {
     }, 0);
   }
 
+  /**
+   * "piece-selector" orderFlow (sushi) counterpart to calculateBurgersTotal.
+   * Piece-count pricing is already fully resolved per selection (see
+   * SushiPieceSelection.totalPrice / SelectedSushiItem.unitPrice in
+   * use-sushi-selection.ts), so this is just quantity * unitPrice summed —
+   * no variant-group lookups needed here the way calculateBurgersTotal
+   * needs meatPriceAdjustment/friesPriceAdjustment.
+   */
+  static calculateSushiTotal(items: SelectedSushiItem[]): number {
+    return items.reduce(
+      (total, item) => total + item.unitPrice * item.quantity,
+      0,
+    );
+  }
+
   static calculateExtrasTotal(burgers: SelectedBurger[]): number {
     return burgers.reduce((total, item) => {
       const itemExtrasTotal = item.selectedExtras.reduce(
@@ -156,6 +172,14 @@ export class OrderPriceCalculator {
     friesExtra?: { price: number } | null;
     discountType?: string;
     discountValue?: number;
+    /**
+     * "piece-selector" orderFlow (sushi) hook-in: the active flow's sushi
+     * total (see calculateSushiTotal), added straight into the subtotal
+     * this method computes internally. Optional, defaults to 0 — omitting
+     * it (every pre-existing caller) is a byte-for-byte no-op for the
+     * "builder-wizard" orderFlow.
+     */
+    additionalTotal?: number;
   }) {
     const safeBurgers = Array.isArray(params.selectedBurgers)
       ? params.selectedBurgers
@@ -173,6 +197,7 @@ export class OrderPriceCalculator {
       safeSides, // ✅
       params.meatExtra,
       params.friesExtra,
+      params.additionalTotal ?? 0,
     );
 
     console.log("🔍 SUBTOTAL:", subtotal);
@@ -208,6 +233,12 @@ export class OrderPriceCalculator {
     selectedSides: SelectedSide[],
     meatExtra?: { price: number } | null,
     friesExtra?: { price: number } | null,
+    /**
+     * "piece-selector" orderFlow (sushi) hook-in — see calculateSushiTotal.
+     * Optional, defaults to 0. Every pre-existing call site omits this, so
+     * this is a no-op addition for the "builder-wizard" orderFlow.
+     */
+    additionalTotal: number = 0,
   ): number {
     const burgersTotal = this.calculateBurgersTotal(selectedBurgers);
 
@@ -228,6 +259,6 @@ export class OrderPriceCalculator {
       return acc + base + extras;
     }, 0);
 
-    return burgersTotal + combosTotal + sidesTotal;
+    return burgersTotal + combosTotal + sidesTotal + additionalTotal;
   }
 }

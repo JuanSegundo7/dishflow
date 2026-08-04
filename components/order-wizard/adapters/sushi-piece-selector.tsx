@@ -1,49 +1,19 @@
 "use client";
 
 /**
- * Sushi "Piezas" (piece-count) selector — Phase 6.
+ * Sushi "Piezas" (piece-count) selector — Phase 6, wired in.
  *
- * ============================================================
- * NOT WIRED IN. This component is intentionally standalone and unimported
- * by order-wizard-drawer.tsx or any other live file.
- * ============================================================
- *
- * Why: Phase 3 (order wizard genericization) explicitly did NOT extract a
- * swappable "burger-builder" adapter behind an interface — the burger
- * builder UI/logic (BurgersStep, SelectedBurgerCard, use-burger-selection,
- * etc.) still lives inline in the order wizard, with no mechanism anywhere
- * in the app that picks a builder component based on the active
- * VerticalDefinition.orderFlow. Building that switching mechanism (reading
- * getActiveVertical().orderFlow in order-wizard-drawer.tsx and rendering
- * either the burger builder or this piece selector) is real, non-trivial
- * work that touches the app's live order-creation path — and there is
- * still no real sushi business/database to test it against. Wiring this
- * component in now would mean shipping unverified changes to a critical
- * path for a hypothetical future customer, which is exactly the kind of
- * speculative infrastructure this refactor has been avoiding phase over
- * phase (see e.g. scripts/010-generic-products.sql's own "not run against
- * a live DB" gating).
- *
- * This component instead proves the UI-level shape works in isolation: it
- * fetches one product's variant groups (same data-fetching pattern as the
- * burger meat-count stepper — see lib/hooks/use-products.ts's
- * `useProductWithVariants`, also used by the burger variant-editor UI) and
- * renders a real "4 piezas / 8 piezas" picker priced via
- * lib/utils/variant-pricing.ts's `findVariantGroupByLabel`. It is ready to
- * be adopted as-is once a real adapter-switching mechanism is built — that
- * should happen together with FINALLY extracting the burger builder behind
- * the same interface, so both adapters (burger + sushi) get wired up in
- * one future pass, not one now (sushi) and one later (burger). Shipping
- * only sushi's half now would leave the switch itself unbuilt and the
- * burger side still hardcoded, which is not a meaningful improvement over
- * today's state.
- *
- * Follow-up work (tracked in docs/cloning-a-new-vertical.md):
- *   1. Design the adapter interface (props in/callbacks out) that both this
- *      component and an extracted burger builder would implement.
- *   2. Have order-wizard-drawer.tsx read `getActiveVertical().orderFlow`
- *      and render the matching adapter.
- *   3. Only then delete this "unwired" comment block.
+ * Renders one product's "Piezas" variant-group picker (fetched via
+ * lib/hooks/use-products.ts's `useProductWithVariants`, priced via
+ * lib/utils/variant-pricing.ts's `findVariantGroupByLabel`). It has no
+ * concept of quantity or of being one of several selected lines — that's
+ * owned by components/order-wizard/steps/sushi-step.tsx, which wraps one
+ * instance of this component per selected line item, and by
+ * components/order-wizard/hooks/use-sushi-selection.ts, which holds the
+ * resulting selections. order-wizard-drawer.tsx picks SushiStep vs
+ * BurgersStep based on `useVertical().orderFlow` — see
+ * components/order-wizard/adapters/order-flow-adapter.ts for the shared
+ * controller-level contract both flows' hooks are wrapped by.
  */
 
 import { useState, useMemo } from "react";

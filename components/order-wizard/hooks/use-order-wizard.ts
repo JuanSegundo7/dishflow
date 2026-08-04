@@ -1,10 +1,12 @@
 import { useMemo, useEffect, useRef } from "react";
 import { useCustomerSelection } from "./use-customer-selection";
 import { useBurgerSelection } from "./use-burger-selection";
+import { useSushiSelection } from "./use-sushi-selection";
 import { useComboSelection } from "./use-combo-selection";
 import { useOrderSettings } from "./use-order-settings";
 import { OrderPriceCalculator } from "../services/order-price-calculator";
 import { OrderDataTransformer } from "../services/order-data-transformer";
+import type { OrderFlowAdapter } from "../adapters/order-flow-adapter";
 import { usePrintOrder } from "@/lib/hooks/use-print-order";
 import {
   useCreateOrder,
@@ -15,6 +17,7 @@ import {
   useCreateCustomerAddress,
 } from "@/lib/hooks/use-customers";
 import type { Extra, OrderWithItems, VariantGroupWithOptions } from "@/lib/types";
+import type { OrderFlow } from "@/lib/verticals";
 import { loadOrderIntoWizard } from "@/services/order-data-loader";
 import { useUpdateOrder } from "@/lib/hooks/orders/use-update-order";
 import { useSidesSelection } from "./use-side-selection";
@@ -37,6 +40,19 @@ interface UseOrderWizardParams {
    * unchanged; combos are Phase 5's job, not this one's.
    */
   burgerVariantGroups?: Record<string, VariantGroupWithOptions[]>;
+  /**
+   * The active vertical's order flow (see lib/verticals/types.ts's
+   * OrderFlow), read by the caller (order-wizard-drawer.tsx) via
+   * useVertical() and passed down here — same pattern as every other
+   * vertical-derived value this hook receives as a param rather than
+   * calling useVertical() itself. Selects which flow's selection
+   * hook/total/transform feeds subtotal/orderTotal/handleSubmit's payload:
+   * "piece-selector" uses sushi, everything else (including the
+   * not-yet-built "size-crust-selector") falls back to the burger flow —
+   * mirrors order-wizard-drawer.tsx's own fallback for which step
+   * component to render.
+   */
+  orderFlow?: OrderFlow;
 }
 
 export function useOrderWizard({
@@ -48,12 +64,15 @@ export function useOrderWizard({
   allCombos = [],
   allExtras = [],
   burgerVariantGroups,
+  orderFlow = "builder-wizard",
 }: UseOrderWizardParams) {
   const isSubmittingRef = useRef(false);
+  const isSushiFlow = orderFlow === "piece-selector";
 
   // ================= HOOKS =================
   const customer = useCustomerSelection();
   const burgers = useBurgerSelection(burgerVariantGroups);
+  const sushi = useSushiSelection();
   const combos = useComboSelection();
   const settings = useOrderSettings();
   const sides = useSidesSelection();
@@ -66,6 +85,42 @@ export function useOrderWizard({
 
   // ================= COMPUTED =================
 
+  // ================= ORDER FLOW ADAPTERS =================
+  // See adapters/order-flow-adapter.ts's doc comment for why this exists
+  // and why `total` is NOT threaded through calculateSubtotal's existing
+  // `selectedBurgers` argument for the burger flow — that call path is
+  // untouched below, guaranteeing a no-op for orderFlow: "builder-wizard".
+  const burgerFlowAdapter: OrderFlowAdapter = useMemo(
+    () => ({
+      canProceed: true,
+      total: OrderPriceCalculator.calculateBurgersTotal(
+        burgers.selectedBurgers,
+      ),
+      toOrderItems: () =>
+        OrderDataTransformer.transformBurgersToOrderItems(
+          burgers.selectedBurgers,
+        ),
+    }),
+    [burgers.selectedBurgers],
+  );
+
+  const sushiFlowAdapter: OrderFlowAdapter = useMemo(
+    () => ({
+      canProceed: true,
+      total: OrderPriceCalculator.calculateSushiTotal(sushi.selectedItems),
+      toOrderItems: () =>
+        OrderDataTransformer.transformSushiToOrderItems(sushi.selectedItems),
+    }),
+    [sushi.selectedItems],
+  );
+
+  const activeFlowAdapter = isSushiFlow ? sushiFlowAdapter : burgerFlowAdapter;
+
+  // Only the sushi flow's total is ever added on top — for the burger flow
+  // this is always 0, and calculateSubtotal/calculateOrderTotal's burger
+  // math below still runs exactly as before via `burgers.selectedBurgers`.
+  const sushiAdditionalTotal = isSushiFlow ? sushiFlowAdapter.total : 0;
+
   const subtotal = useMemo(() => {
     return OrderPriceCalculator.calculateSubtotal(
       burgers.selectedBurgers,
@@ -73,6 +128,7 @@ export function useOrderWizard({
       sides.selectedSides,
       meatExtra,
       friesExtra,
+      sushiAdditionalTotal,
     );
   }, [
     burgers.selectedBurgers,
@@ -80,6 +136,7 @@ export function useOrderWizard({
     sides.selectedSides,
     meatExtra,
     friesExtra,
+    sushiAdditionalTotal,
   ]);
 
   const discountAmount = useMemo(() => {
@@ -101,6 +158,7 @@ export function useOrderWizard({
       friesExtra,
       discountType: settings.discountType,
       discountValue: settings.discountValue,
+      additionalTotal: sushiAdditionalTotal,
     });
 
     // Si el descuento es 100%, el total es 0 (incluye delivery fee)
@@ -122,6 +180,7 @@ export function useOrderWizard({
     friesExtra,
     settings.discountType,
     settings.discountValue,
+    sushiAdditionalTotal,
   ]);
 
   const extrasTotal = useMemo(() => {
@@ -130,10 +189,11 @@ export function useOrderWizard({
 
   const canProceedFromCustomer = customer.canProceed;
 
-  const canProceedFromBurgers = true;
+  const canProceedFromBurgers = activeFlowAdapter.canProceed;
 
   const canProceedFromSides =
     burgers.selectedBurgers.length > 0 ||
+    sushi.selectedItems.length > 0 ||
     combos.selectedCombos.length > 0 ||
     sides.selectedSides.length > 0;
 
@@ -170,10 +230,12 @@ export function useOrderWizard({
         allCombos,
         meatExtra,
         friesExtra,
+        orderFlow,
       );
 
       customer.loadCustomerData(wizardData.customerData);
       burgers.loadBurgers(wizardData.burgers);
+      sushi.loadItems(wizardData.sushi);
       combos.loadCombos(wizardData.combos);
       settings.loadSettings(wizardData.settings);
       if (wizardData.sides) {
@@ -188,14 +250,28 @@ export function useOrderWizard({
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     try {
-      const allItems: OrderItemInput[] =
-        OrderDataTransformer.transformToOrderPayload(
-          burgers.selectedBurgers,
-          combos.selectedCombos,
-          meatExtra,
-          friesExtra,
-          sides.selectedSides,
-        );
+      // Reassembled here (rather than via OrderDataTransformer.
+      // transformToOrderPayload, left untouched/unused for this call site)
+      // so the "core items" segment can come from whichever flow is
+      // active (activeFlowAdapter.toOrderItems()) instead of always
+      // being burger items. For orderFlow: "builder-wizard" this produces
+      // the exact same three calls, same args, same concatenation order
+      // transformToOrderPayload itself would have made — a no-op.
+      const comboItems = OrderDataTransformer.transformCombosToOrderItems(
+        combos.selectedCombos,
+        meatExtra,
+        friesExtra,
+      );
+      const sideItems = sides.selectedSides.length
+        ? OrderDataTransformer.transformSidesToOrderItems(sides.selectedSides)
+        : [];
+      const coreItems = activeFlowAdapter.toOrderItems();
+
+      const allItems: OrderItemInput[] = [
+        ...comboItems,
+        ...coreItems,
+        ...sideItems,
+      ];
 
       if (!allItems || allItems.length === 0) {
         throw new Error("No hay items en el pedido");
@@ -290,6 +366,7 @@ export function useOrderWizard({
   const resetAll = () => {
     customer.reset();
     burgers.reset();
+    sushi.reset();
     combos.resetState();
     settings.reset();
     sides.reset();
@@ -298,6 +375,7 @@ export function useOrderWizard({
   return {
     customer,
     burgers,
+    sushi,
     combos,
     settings,
     sides,

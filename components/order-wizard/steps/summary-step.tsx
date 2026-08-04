@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { SelectedSide } from "../hooks/use-side-selection";
+import type { SelectedSushiItem } from "@/lib/types/sushi-types";
 
 interface SummaryStepProps {
   // Customer Info
@@ -43,6 +44,13 @@ interface SummaryStepProps {
       quantity: number;
     }>;
   }>;
+
+  // "piece-selector" orderFlow (sushi) counterpart to selectedBurgers — NOT
+  // orderFlow-gated here, this component just renders whichever array is
+  // non-empty (same as burgers/combos/sides already coexist as independent
+  // parallel blocks). In practice only one of selectedBurgers/
+  // selectedSushiItems is ever populated per order.
+  selectedSushiItems: SelectedSushiItem[];
 
   selectedCombos: Array<{
     id: string;
@@ -113,6 +121,7 @@ export function SummaryStep({
   selectedAddress,
   newAddressData,
   selectedBurgers,
+  selectedSushiItems,
   selectedCombos,
   selectedSides,
   orderTotal,
@@ -506,6 +515,31 @@ export function SummaryStep({
                     <div className="flex flex-col items-end ml-4">
                       <span className="font-semibold">
                         {formatCurrency(basePrice + extrasPrice)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Sushi Items */}
+            {selectedSushiItems.map((item) => {
+              const total = item.unitPrice * item.quantity;
+
+              return (
+                <div key={item.id} className="border-b pb-3 last:border-0">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {item.quantity}x {item.product.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {item.variantOptionLabel ?? "Sin configurar"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end ml-4">
+                      <span className="font-semibold">
+                        {formatCurrency(total)}
                       </span>
                     </div>
                   </div>
