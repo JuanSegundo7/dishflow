@@ -17,6 +17,11 @@ export interface UpdateOrderPayload {
   items: OrderItemInput[];
   notes: string | null;
   delivery_time?: string | null;
+  // Cost/stock/finance porting, PR2 — mirrors CreateOrderInput's own
+  // source/commission_rate/commission_amount fields (use-create-order.ts).
+  source?: string | null;
+  commission_rate?: number;
+  commission_amount?: number;
 }
 
 export function useUpdateOrder() {
@@ -57,8 +62,15 @@ export function useUpdateOrder() {
         return sum + item.subtotal + extrasTotal;
       }, 0);
 
+      // Cost/stock/finance porting, PR2: commission subtracted the same way
+      // discount_amount already is — see use-create-order.ts's identical
+      // math for why this doesn't double-count against delivery_fee.
+      const commissionAmount = payload.commission_amount ?? 0;
       const finalTotal =
-        totalAmount - payload.discount_amount + payload.delivery_fee;
+        totalAmount -
+        payload.discount_amount -
+        commissionAmount +
+        payload.delivery_fee;
 
       // 4️⃣ Actualizar order
       const { data: updatedOrder, error: orderError } = await supabase
@@ -77,6 +89,9 @@ export function useUpdateOrder() {
           total_amount: finalTotal,
           notes: payload.notes,
           updated_at: new Date().toISOString(),
+          source: payload.source ?? null,
+          commission_rate: payload.commission_rate ?? 0,
+          commission_amount: commissionAmount,
         })
         .eq("id", orderId)
         .select()

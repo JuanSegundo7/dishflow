@@ -47,6 +47,15 @@ export interface CreateOrderInput {
   items: OrderItemInput[];
   notes: string | null;
   delivery_time?: string | null;
+  // Cost/stock/finance porting, PR2: which sales channel this order came
+  // from + its commission, frozen by the caller (use-order-wizard.ts) at
+  // submit time from whatever getOrderSources() config was current then —
+  // this hook writes them as-is, it never re-reads live source config
+  // itself. `price_adjustment` is NOT threaded here — reserved column only,
+  // wired starting PR3.
+  source?: string | null;
+  commission_rate?: number;
+  commission_amount?: number;
   save_customer?: boolean;
   new_customer?: {
     name: string;
@@ -75,7 +84,13 @@ export function useCreateOrder() {
       }, 0);
 
       const discountAmount = input.discount_amount ?? 0;
-      const total = itemsTotal - discountAmount + input.delivery_fee;
+      // Cost/stock/finance porting, PR2: commission is subtracted from the
+      // persisted total the exact same way discountAmount already is —
+      // `input.commission_amount` itself was computed by the caller
+      // against items subtotal only (delivery fee excluded), so it's safe
+      // to combine here alongside delivery_fee without double-counting.
+      const commissionAmount = input.commission_amount ?? 0;
+      const total = itemsTotal - discountAmount - commissionAmount + input.delivery_fee;
 
       const { data: order, error } = await supabase
         .from("orders")
@@ -93,6 +108,9 @@ export function useCreateOrder() {
           notes: input.notes,
           delivery_time: input.delivery_time ?? null,
           status: "new",
+          source: input.source ?? null,
+          commission_rate: input.commission_rate ?? 0,
+          commission_amount: input.commission_amount ?? 0,
         })
         .select()
         .single();

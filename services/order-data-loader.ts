@@ -65,6 +65,14 @@ function loadSettings(order: OrderWithItems) {
       (order.discount_type as "amount" | "percentage" | "none") || "none",
     discountValue: order.discount_value || 0,
     notes: order.notes || "",
+    // Cost/stock/finance porting, PR2: reload the order's frozen source
+    // when editing — commission_rate/commission_amount are NOT reloaded
+    // into wizard state here (they're re-derived live from the reloaded
+    // `source` + current getOrderSources() config by use-order-wizard.ts's
+    // own commissionRate/commissionAmount memos), matching how every other
+    // derived total in this wizard already gets recomputed on load rather
+    // than trusting a stale persisted value.
+    source: order.source ?? null,
   };
 }
 

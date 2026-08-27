@@ -179,6 +179,18 @@ export interface VariantSelectionEntry {
   variant_option_id: string;
   variant_option_label: string;
   price_delta: number;
+  // Cost/stock/finance porting, PR2 (scripts/043 is a no-op for this column
+  // — it lives on variant_options, not orders/order_items — see
+  // scripts/042-product-supplies.sql): frozen copy of the selected
+  // VariantOption.quantity_factor at order-creation time, mirroring how
+  // price_delta above is already frozen. Optional/nullable because every
+  // order_item row created before this PR shipped has no such value stored
+  // — READERS of this field (recipe-cost/stock-deduction consumers) MUST
+  // treat a missing/null/legacy value as factor 1 (no scaling), never 0 —
+  // see lib/utils/variant-pricing.ts's resolveFrozenQuantityFactor and
+  // lib/services/recipe-cost.ts's resolveRecipeQuantities, which are the
+  // enforced read-back points for this rule.
+  quantity_factor?: number | null;
 }
 
 // ============================================
@@ -203,6 +215,22 @@ export interface Order {
   discount_value: number; // 🆕 Agregado de DB
   discount_amount: number; // 🆕 Agregado de DB
   notes: string | null;
+  // Cost/stock/finance porting, PR2 (scripts/043-order-source-and-commission.sql):
+  // which sales channel this order came from — an operator-configured
+  // string (see lib/utils/commission.ts's getOrderSources()), NOT a fixed
+  // enum, so no CHECK constraint exists in the DB. Null means no channel
+  // was selected (e.g. a walk-in order) — never coerced to a default.
+  source: string | null;
+  // Frozen at order-creation time from whatever commission rate was
+  // configured for `source` at that moment — never re-derived from live
+  // config afterward. 0 for every order with no source or no configured
+  // rate for it.
+  commission_rate: number;
+  commission_amount: number;
+  // Reserved by the PR2 migration for PR3 (a later PR in this stacked
+  // chain, out of scope here) — NOT wired into any calculation yet. Always
+  // 0 until PR3 wires it up.
+  price_adjustment: number;
   created_at: string;
   updated_at: string;
 }
@@ -282,6 +310,10 @@ export interface ExternalIncome {
   date: string; // YYYY-MM-DD
   amount: number;
   description: string | null;
+  // Cost/stock/finance porting, PR2 (scripts/043-order-source-and-commission.sql):
+  // same channel concept as Order.source above. NOT wired into any UI yet
+  // in this PR — reserved for PR3.
+  source: string | null;
   created_at: string;
 }
 

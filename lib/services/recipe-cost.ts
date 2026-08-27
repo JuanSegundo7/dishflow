@@ -42,17 +42,54 @@ export interface ProductCostResult {
   incomplete: boolean;
 }
 
+export interface RecipeQuantityInput {
+  quantity: number;
+  scales_with_variant_group_id: string | null;
+}
+
+/**
+ * Cost/stock/finance porting, PR2: the SINGLE resolution point for "recipe
+ * line quantity, scaled by a selected variant option's quantity_factor when
+ * the line opts in via `scales_with_variant_group_id`". `computeProductCost`
+ * below calls this — and PR4's stock-deduction code (a later PR in this
+ * stacked chain, out of scope here) MUST also call this same function
+ * rather than re-deriving the `quantity * factor` multiplication itself, so
+ * scaling behavior can never drift between cost math and stock deduction.
+ *
+ * `variantFactors` mirrors `computeProductCost`'s own optional map:
+ * variant_group_id -> the quantity_factor of whichever option is
+ * selected/frozen for that group. A line with no
+ * `scales_with_variant_group_id`, or one whose group has no entry in
+ * `variantFactors` (including when `variantFactors` itself is omitted),
+ * resolves to its own quantity unscaled (factor of 1) — this is also the
+ * "missing/legacy/no-selection resolves to factor 1, never 0" rule from
+ * lib/types/index.ts's `VariantSelectionEntry.quantity_factor` doc comment,
+ * satisfied here by construction (see also
+ * lib/utils/variant-pricing.ts's resolveFrozenQuantityFactor, the
+ * equivalent read-back guard for a single frozen entry).
+ */
+export function resolveRecipeQuantities<T extends RecipeQuantityInput>(
+  recipe: T[],
+  variantFactors?: Record<string, number>,
+): number[] {
+  return recipe.map((line) => {
+    const factor =
+      line.scales_with_variant_group_id && variantFactors
+        ? (variantFactors[line.scales_with_variant_group_id] ?? 1)
+        : 1;
+    return line.quantity * factor;
+  });
+}
+
 /**
  * Computes a product's total ingredient cost from its recipe lines.
  *
  * `variantFactors` is an optional map of variant_group_id -> the scaling
  * factor to apply (the selected VariantOption's quantity_factor — see
  * scripts/042-product-supplies.sql) for recipe lines that opted into
- * `scales_with_variant_group_id`. When omitted, or when a line's
- * `scales_with_variant_group_id` has no entry in the map, that line's
- * quantity is used as-is (factor of 1) — this PR does not build the UI that
- * populates `variantFactors` (that's a later phase); the parameter exists
- * so this function's contract already supports it.
+ * `scales_with_variant_group_id`. See `resolveRecipeQuantities` above for
+ * the actual scaling resolution — this function no longer re-derives that
+ * multiplication itself.
  */
 export function computeProductCost(
   recipe: ProductSupplyWithSupply[],
@@ -61,7 +98,9 @@ export function computeProductCost(
   let total = 0;
   let incomplete = false;
 
-  const lines: RecipeCostLine[] = recipe.map((line) => {
+  const effectiveQuantities = resolveRecipeQuantities(recipe, variantFactors);
+
+  const lines: RecipeCostLine[] = recipe.map((line, index) => {
     const supply = line.supply;
     const missing = !supply;
     const inactive = !missing && supply.is_active === false;
@@ -70,12 +109,7 @@ export function computeProductCost(
       incomplete = true;
     }
 
-    const factor =
-      line.scales_with_variant_group_id && variantFactors
-        ? (variantFactors[line.scales_with_variant_group_id] ?? 1)
-        : 1;
-
-    const effectiveQuantity = line.quantity * factor;
+    const effectiveQuantity = effectiveQuantities[index];
     const unitCost = supply?.cost_per_unit ?? 0;
     // Unresolvable/inactive lines contribute 0 to the total rather than a
     // possibly-stale cost_per_unit — `incomplete` is what tells the caller

@@ -153,6 +153,12 @@ export function formatOrderForWhatsapp(order: Order) {
     const label = order.discount_type === "percentage" ? `Desc. ${order.discount_value}%` : "Desc.";
     totalParts.push(`${label} -${formatCurrency(order.discount_amount)}`);
   }
+  // Cost/stock/finance porting, PR2: same conditional-inclusion pattern as
+  // the discount line above (only shown when there's actually a nonzero
+  // amount to report).
+  if (order.commission_amount > 0) {
+    totalParts.push(`Comisión -${formatCurrency(order.commission_amount)}`);
+  }
 
   return `*RESTAURANTE*
 🧾 *PEDIDO #${order.order_number}* · ${formatDateTime(order.created_at)}

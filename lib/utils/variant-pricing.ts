@@ -33,7 +33,31 @@ export function findVariantGroupByLabel(
 
 interface VariantDeltaResult {
   priceDelta: number;
+  /**
+   * Cost/stock/finance porting, PR2: the resolved option's
+   * `quantity_factor` (see scripts/042-product-supplies.sql), frozen into
+   * `entry.quantity_factor` below exactly like `priceDelta` already freezes
+   * into `entry.price_delta`. 1 when unresolvable — see the out-of-range
+   * branch below.
+   */
+  quantityFactor: number;
   entry: VariantSelectionEntry | null;
+}
+
+/**
+ * Read-back enforcement point for a FROZEN `VariantSelectionEntry`'s
+ * `quantity_factor` (see lib/types/index.ts's doc comment on that field).
+ * Missing/legacy/no-selection entries — anything that isn't a real,
+ * present, positive number — MUST resolve to 1 (no scaling), never 0.
+ * Cost/deduction consumers reading a frozen order_item.variant_selections
+ * snapshot should go through this rather than reading `.quantity_factor`
+ * directly, so this rule can't accidentally drift between call sites.
+ */
+export function resolveFrozenQuantityFactor(
+  entry: VariantSelectionEntry | null | undefined,
+): number {
+  const raw = entry?.quantity_factor;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : 1;
 }
 
 /**
@@ -53,19 +77,22 @@ export function resolveVariantDelta(
   count: number,
 ): VariantDeltaResult {
   if (!group || !group.variant_options || group.variant_options.length === 0) {
-    return { priceDelta: 0, entry: null };
+    return { priceDelta: 0, quantityFactor: 1, entry: null };
   }
 
   const exact = group.variant_options.find((o) => o.sort_order === count);
   if (exact) {
+    const quantityFactor = Number(exact.quantity_factor);
     return {
       priceDelta: Number(exact.price_delta),
+      quantityFactor,
       entry: {
         variant_group_id: group.id,
         variant_group_label: group.label,
         variant_option_id: exact.id,
         variant_option_label: exact.label,
         price_delta: Number(exact.price_delta),
+        quantity_factor: quantityFactor,
       },
     };
   }
@@ -101,14 +128,33 @@ export function resolveVariantDelta(
     Math.abs(o.sort_order - count) < Math.abs(closest.sort_order - count) ? o : closest,
   );
 
+  // quantity_factor is a supply-CONSUMPTION multiplier, not a price — unlike
+  // priceDelta above, it must NOT be linearly extrapolated the same way
+  // (there's no guarantee ingredient consumption scales linearly past the
+  // pre-generated option range the way the seeded price formula does).
+  // Instead, mirror the migration's own backfill formula
+  // (scripts/042-product-supplies.sql: sort_order / default_option.sort_order)
+  // directly against the out-of-range `count`, so an out-of-range selection
+  // gets the same "how many multiples of the default" ratio a real option
+  // at that count would have gotten. Falls back to 1 (no scaling) when
+  // there's no usable default to divide by — same safe fallback the
+  // migration's own backfill uses for its sort_order = 0 edge case.
+  const defaultOption = sorted.find((o) => o.is_default);
+  const quantityFactor =
+    defaultOption && defaultOption.sort_order > 0
+      ? count / defaultOption.sort_order
+      : 1;
+
   return {
     priceDelta,
+    quantityFactor,
     entry: {
       variant_group_id: group.id,
       variant_group_label: group.label,
       variant_option_id: nearest.id,
       variant_option_label: nearest.label,
       price_delta: priceDelta,
+      quantity_factor: quantityFactor,
     },
   };
 }

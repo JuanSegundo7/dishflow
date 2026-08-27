@@ -1,6 +1,7 @@
 import { SelectedBurger } from "@/lib/types/combo-types";
 import { SelectedSushiItem } from "@/lib/types/sushi-types";
 import { SelectedSide } from "../hooks/use-side-selection";
+import { computeCommission } from "@/lib/utils/commission";
 
 interface SelectedComboSlot {
   slotId: string;
@@ -162,6 +163,19 @@ export class OrderPriceCalculator {
     return 0;
   }
 
+  /**
+   * Cost/stock/finance porting, PR2: pure wrapper around
+   * lib/utils/commission.ts's computeCommission — the ONLY entry point that
+   * should compute a commission amount from an items subtotal + rate.
+   * `subtotalItems` MUST be the items-only subtotal (calculateSubtotal's
+   * return value) — delivery fee is deliberately excluded from the
+   * commission base (confirmed business rule), so callers must never pass
+   * a subtotal that already includes deliveryFee.
+   */
+  static calculateCommission(subtotalItems: number, rate: number): number {
+    return computeCommission(subtotalItems, rate);
+  }
+
   static calculateOrderTotal(params: {
     selectedBurgers: SelectedBurger[];
     selectedCombos: any[];
@@ -172,6 +186,13 @@ export class OrderPriceCalculator {
     friesExtra?: { price: number } | null;
     discountType?: string;
     discountValue?: number;
+    /**
+     * Cost/stock/finance porting, PR2: commission rate (%) for the order's
+     * selected source (see lib/utils/commission.ts's OrderSourceConfig).
+     * Optional, defaults to 0 — omitting it (every pre-PR2 caller) is a
+     * byte-for-byte no-op.
+     */
+    commissionRate?: number;
     /**
      * "piece-selector" orderFlow (sushi) hook-in: the active flow's sushi
      * total (see calculateSushiTotal), added straight into the subtotal
@@ -215,12 +236,22 @@ export class OrderPriceCalculator {
 
     console.log("🔍 DISCOUNT AMOUNT:", discountAmount);
 
+    // Commission base is `subtotal` (items only) — deliberately computed
+    // BEFORE deliveryFee is added below, so delivery is never part of the
+    // commission base (confirmed business rule).
+    const commissionAmount = this.calculateCommission(
+      subtotal,
+      params.commissionRate || 0,
+    );
+
+    console.log("🔍 COMMISSION AMOUNT:", commissionAmount);
+
     const deliveryFee =
       params.deliveryType === "delivery" ? Number(params.deliveryFee) || 0 : 0;
 
     console.log("🔍 DELIVERY FEE:", deliveryFee);
 
-    const total = subtotal - discountAmount + deliveryFee;
+    const total = subtotal - discountAmount - commissionAmount + deliveryFee;
 
     console.log("🔍 TOTAL FINAL:", total);
 

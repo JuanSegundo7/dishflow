@@ -15,6 +15,7 @@ import type { Order } from "@/lib/types";
 import { useOrderWithItems } from "@/lib/hooks/orders/use-orders";
 import { formatCurrency } from "@/lib/utils/format";
 import { orderStatusConfig } from "@/lib/utils/order-status";
+import { getOrderSources } from "@/lib/utils/commission";
 
 interface OrderDetailsModalProps {
   order: Order | null;
@@ -434,6 +435,34 @@ export function OrderDetailsModal({
                 </span>
               </div>
             )}
+
+            {orderWithItems.commission_amount > 0 && (() => {
+              // orderWithItems.source is the raw OrderSourceConfig.key
+              // (a nanoid, see app/(dashboard)/precios/page.tsx's source
+              // config editor) — resolve it to its human label here rather
+              // than rendering the key itself. A source deleted from config
+              // after the order was placed falls back to the raw key rather
+              // than disappearing, since the order really was placed through
+              // that (now-unnamed) channel.
+              const sourceLabel = orderWithItems.source
+                ? (getOrderSources().find((s) => s.key === orderWithItems.source)
+                    ?.label ?? orderWithItems.source)
+                : null;
+              return (
+                <div className="flex justify-between text-sm text-orange-600">
+                  <span>
+                    Comisión
+                    {(sourceLabel || orderWithItems.commission_rate > 0) &&
+                      ` (${[sourceLabel, orderWithItems.commission_rate > 0 ? `${orderWithItems.commission_rate}%` : null]
+                        .filter(Boolean)
+                        .join(" · ")})`}
+                  </span>
+                  <span className="font-medium">
+                    -{formatCurrency(orderWithItems.commission_amount)}
+                  </span>
+                </div>
+              );
+            })()}
 
             <Separator />
 

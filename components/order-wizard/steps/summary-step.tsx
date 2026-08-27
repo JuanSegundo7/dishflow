@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { User, MapPin, Phone, Info, AlertCircle, Clock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils/format";
 import { CustomerAddress } from "@/lib/types";
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -17,6 +17,14 @@ import {
 import { cn } from "@/lib/utils";
 import { SelectedSide } from "../hooks/use-side-selection";
 import type { SelectedSushiItem } from "@/lib/types/sushi-types";
+import { getOrderSources, type OrderSourceConfig } from "@/lib/utils/commission";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface SummaryStepProps {
   // Customer Info
@@ -112,6 +120,13 @@ interface SummaryStepProps {
   // Delivery Time
   deliveryTime?: string;
   onDeliveryTimeChange?: (time: string) => void;
+
+  // Cost/stock/finance porting, PR2: order source (sales channel) + its
+  // frozen commission amount, mirrored from discountType/discountAmount's
+  // own "controlled value in, pre-derived amount in" prop shape above.
+  source?: string | null;
+  onSourceChange?: (source: string | null) => void;
+  commissionAmount?: number;
 }
 
 export function SummaryStep({
@@ -143,8 +158,28 @@ export function SummaryStep({
   onNotesChange,
   onDeliveryTimeChange,
   deliveryTime,
+  source,
+  onSourceChange,
+  commissionAmount = 0,
 }: SummaryStepProps) {
   const topRef = useRef<HTMLDivElement>(null);
+
+  // Cost/stock/finance porting, PR2: order sources are operator-configured
+  // localStorage data (see lib/utils/commission.ts), read once on mount —
+  // same "read once, no live subscription" approach the rest of the
+  // wizard's localStorage-backed config (default delivery fee) already
+  // uses.
+  const [orderSources, setOrderSources] = useState<OrderSourceConfig[]>([]);
+  useEffect(() => {
+    setOrderSources(getOrderSources());
+  }, []);
+
+  const hasSourceOptions = orderSources.length > 0;
+  // Channel-aware gating: the commission section only makes sense to show
+  // when a source is actually selected AND that source carries a nonzero
+  // commission — never a legitimate negative value, so the same simple
+  // `>0` visual treatment the discount line below already uses is fine here.
+  const showCommissionLine = !!source && commissionAmount > 0;
 
   useEffect(() => {
     let el = topRef.current?.parentElement;
@@ -325,6 +360,43 @@ export function SummaryStep({
           )}
         </CardContent>
       </Card>
+
+      {/* Canal de venta (source) — cost/stock/finance porting, PR2 */}
+      {hasSourceOptions && onSourceChange && (
+        <Card className="bg-card">
+          <CardContent className="p-4 space-y-3">
+            <h3 className="text-sm font-medium">Canal de venta</h3>
+            <Select
+              value={source ?? "__none__"}
+              onValueChange={(v) => onSourceChange(v === "__none__" ? null : v)}
+            >
+              <SelectTrigger className="w-full bg-card">
+                <SelectValue placeholder="Sin canal" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Sin canal</SelectItem>
+                {orderSources.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                    {s.commissionRate > 0 ? ` (${s.commissionRate}% comisión)` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {showCommissionLine && (
+              <div className="flex items-center justify-between text-sm rounded-md bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 p-2">
+                <span className="text-orange-900 dark:text-orange-100">
+                  Comisión del canal
+                </span>
+                <span className="font-semibold text-orange-700 dark:text-orange-300">
+                  -{formatCurrency(commissionAmount)}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Discount */}
       <Card className="bg-card">
@@ -721,6 +793,12 @@ export function SummaryStep({
                   )}
                 </span>
                 <span>-{formatCurrency(isFullDiscount ? orderTotal : discountAmount)}</span>
+              </div>
+            )}
+            {showCommissionLine && (
+              <div className="flex justify-between text-orange-600 dark:text-orange-400">
+                <span>Comisión del canal</span>
+                <span>-{formatCurrency(commissionAmount)}</span>
               </div>
             )}
             {deliveryType === "delivery" && !isFullDiscount && (
