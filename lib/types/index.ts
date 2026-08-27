@@ -108,6 +108,12 @@ export interface VariantOption {
   is_default: boolean;
   sort_order: number;
   metadata: Record<string, unknown>;
+  // Cost/stock/finance porting (scripts/042-product-supplies.sql): scaling
+  // multiplier for a recipe line that opts into `scales_with_variant_group_id`
+  // — 1 means "no scaling" (the column default for every pre-existing row
+  // and every group a recipe line doesn't scale by). See that migration's
+  // header for the backfill formula and its sort_order = 0 edge case.
+  quantity_factor: number;
   created_at: string;
 }
 
@@ -117,6 +123,46 @@ export interface VariantGroupWithOptions extends VariantGroup {
 
 export interface ProductWithVariantGroups extends Product {
   variant_groups: VariantGroupWithOptions[];
+}
+
+// ============================================================
+// SUPPLIES / RECIPES (cost, stock, finance porting — PR1, see
+// scripts/041-supplies-and-stock.sql and
+// scripts/042-product-supplies.sql). `supplies` is the raw-ingredient
+// inventory model; `product_supplies` is the recipe join table linking a
+// `products` row to the supplies (and quantities) it consumes.
+// ============================================================
+
+export type SupplyUnit = "g" | "kg" | "ml" | "l" | "unit";
+
+export interface Supply {
+  id: string;
+  name: string;
+  unit: SupplyUnit;
+  cost_per_unit: number;
+  // No floor enforced anywhere on this value — negative stock is a valid,
+  // meaningful state by design. See scripts/041-supplies-and-stock.sql's
+  // "DELIBERATE DESIGN CHOICES" note.
+  stock_quantity: number;
+  min_stock_quantity: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ProductSupply {
+  id: string;
+  product_id: string;
+  supply_id: string;
+  quantity: number;
+  // Optional: when set, this recipe line's effective quantity scales with
+  // the selected VariantOption.quantity_factor in that group. NULL means
+  // the line is flat (no scaling). See scripts/042-product-supplies.sql.
+  scales_with_variant_group_id: string | null;
+  created_at: string;
+}
+
+export interface ProductSupplyWithSupply extends ProductSupply {
+  supply: Supply;
 }
 
 // ============================================
