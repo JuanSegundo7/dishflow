@@ -202,7 +202,8 @@ export function useUpdateOrder() {
       // built straight from `payload.items` — no need to read the
       // just-inserted rows back, OrderItemInput already carries every
       // field buildStockDeductionPlan needs (kind/product_id/quantity/
-      // variant_selections/extras).
+      // variant_selections/extras/customizations — the last one added in
+      // PR5/Group 7b for combo-slot recipe resolution).
       if (wasCompleted) {
         const deductionItems: DeductionPlanItem[] = payload.items.map((item) => ({
           kind: item.kind,
@@ -210,6 +211,11 @@ export function useUpdateOrder() {
           quantity: item.quantity,
           burger_name: item.burger_name,
           variant_selections: item.variant_selections,
+          // Cost/stock/finance porting, PR5 (Group 7b): needed so a
+          // re-applied combo line (edited item set on an already-completed
+          // order) resolves its slot recipes too, not just product/addon
+          // lines — OrderItemInput already carries this field unchanged.
+          customizations: item.customizations ?? null,
           extras: item.extras.map((extra) => ({
             product_id: extra.product_id,
             quantity: extra.quantity,

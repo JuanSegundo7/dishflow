@@ -39,9 +39,11 @@ export default function InsumosPage() {
   const { data: supplies, isLoading } = useAllSupplies();
   const deleteSupply = useDeleteSupply();
   const toggleActive = useToggleSupplyActive();
-  // Cost/stock/finance porting, PR4 task 7a.10 — informational note only,
-  // see use-combo-lines-not-counted.ts for why this isn't sourced from a
-  // persisted DeductionPlan.skipped record.
+  // Cost/stock/finance porting, PR4 task 7a.10, narrowed in PR5 task 7b.3
+  // — informational note only, now counting genuine combo customizations
+  // parse failures rather than every combo line (combo-slot deduction is
+  // live as of PR5). See use-combo-lines-not-counted.ts for why this isn't
+  // sourced from a persisted DeductionPlan.skipped record.
   const { data: comboLinesNotCounted } = useComboLinesNotCounted();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -87,8 +89,9 @@ export default function InsumosPage() {
         {!!comboLinesNotCounted && comboLinesNotCounted > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             {comboLinesNotCounted}{" "}
-            {comboLinesNotCounted === 1 ? "línea de combo no" : "líneas de combo no"} contabilizada
-            {comboLinesNotCounted === 1 ? "" : "s"} contra el stock (deducción de combos: próximamente).
+            {comboLinesNotCounted === 1 ? "línea de combo" : "líneas de combo"} con datos de
+            personalización inválidos: no se pudo descontar stock para{" "}
+            {comboLinesNotCounted === 1 ? "esa línea" : "esas líneas"}.
           </div>
         )}
 

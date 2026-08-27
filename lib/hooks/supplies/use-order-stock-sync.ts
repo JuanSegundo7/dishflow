@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { DeductionPlan, OrderStatus, ProductSupplyWithSupply } from "@/lib/types";
 import {
   buildStockDeductionPlan,
+  collectComboRecipeProductIds,
   type DeductionPlanItem,
 } from "@/lib/services/stock-deduction";
 
@@ -68,6 +69,15 @@ function collectProductIds(items: DeductionPlanItem[]): string[] {
   for (const item of items) {
     if (item.product_id) ids.push(item.product_id);
     for (const extra of item.extras) ids.push(extra.product_id);
+    // Cost/stock/finance porting, PR5 (Group 7b): a combo line's own
+    // product_id is always null and its extras are always [] (see
+    // order-data-transformer.ts) — the ids it needs recipes for live
+    // inside `customizations` instead. See stock-deduction.ts's
+    // collectComboRecipeProductIds for the parsing this shares with
+    // buildStockDeductionPlan itself.
+    if (item.kind === "combo") {
+      ids.push(...collectComboRecipeProductIds(item.customizations));
+    }
   }
   return ids;
 }
@@ -102,7 +112,7 @@ async function fetchOrderItemsForDeduction(
   const { data, error } = await supabase
     .from("order_items")
     .select(
-      "kind, product_id, quantity, burger_name, variant_selections, order_item_modifiers(product_id, quantity)",
+      "kind, product_id, quantity, burger_name, variant_selections, customizations, order_item_modifiers(product_id, quantity)",
     )
     .eq("order_id", orderId);
 
@@ -114,6 +124,9 @@ async function fetchOrderItemsForDeduction(
     quantity: row.quantity,
     burger_name: row.burger_name,
     variant_selections: row.variant_selections,
+    // Cost/stock/finance porting, PR5 (Group 7b): needed to resolve
+    // combo-slot recipe lookups — see stock-deduction.ts's parseComboSlots.
+    customizations: row.customizations,
     extras: (row.order_item_modifiers ?? []).map((m: any) => ({
       product_id: m.product_id,
       quantity: m.quantity,
@@ -237,7 +250,14 @@ export async function applyStockDeduction(
   items: DeductionPlanItem[],
 ): Promise<DeductionPlan> {
   const recipesByProductId = await fetchRecipesByProductId(supabase, collectProductIds(items));
-  const plan = buildStockDeductionPlan({ items }, recipesByProductId);
+  // Cost/stock/finance porting, PR5 (Group 7b): the ONLY call site of
+  // buildStockDeductionPlan — combo-slot deduction is now on for every
+  // caller (syncOrderStockForTransition's completion path and
+  // use-update-order.ts's R2 guard alike), since both feed this same
+  // function.
+  const plan = buildStockDeductionPlan({ items }, recipesByProductId, {
+    includeComboSlots: true,
+  });
   await applyDeductionPlan(supabase, orderId, plan);
   return plan;
 }
