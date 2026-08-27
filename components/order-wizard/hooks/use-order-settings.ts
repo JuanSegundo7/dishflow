@@ -36,6 +36,11 @@ export function useOrderSettings() {
   // channel selected — never coerced to a default, matches
   // Order.source's own "never coerced" contract (lib/types/index.ts).
   const [source, setSource] = useState<string | null>(null);
+  // Cost/stock/finance porting, PR3: signed flat amount adjusting the
+  // order total (see orders.price_adjustment, scripts/043). Kept entirely
+  // separate from discountType/discountValue — never coerced into a
+  // discount field. Defaults to 0 (no-op), same as its DB column default.
+  const [priceAdjustment, setPriceAdjustment] = useState(0);
 
   const reset = () => {
     setDeliveryType("delivery");
@@ -46,6 +51,7 @@ export function useOrderSettings() {
     setNotes("");
     setDeliveryTime(getDefaultDeliveryTime()); // recalcula al momento del reset
     setSource(null);
+    setPriceAdjustment(0);
   };
 
   const loadSettings = (settings: {
@@ -57,6 +63,7 @@ export function useOrderSettings() {
     notes: string;
     deliveryTime?: string;
     source?: string | null;
+    priceAdjustment?: number;
   }) => {
     setDeliveryType(settings.deliveryType);
     setDeliveryFee(settings.deliveryFee);
@@ -66,6 +73,7 @@ export function useOrderSettings() {
     setNotes(settings.notes);
     setDeliveryTime(settings.deliveryTime || "");
     setSource(settings.source ?? null);
+    setPriceAdjustment(settings.priceAdjustment ?? 0);
   };
 
   return {
@@ -85,6 +93,8 @@ export function useOrderSettings() {
     setDeliveryTime,
     source,
     setSource,
+    priceAdjustment,
+    setPriceAdjustment,
     reset,
     loadSettings,
   };

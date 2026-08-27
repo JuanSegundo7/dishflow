@@ -127,6 +127,14 @@ interface SummaryStepProps {
   source?: string | null;
   onSourceChange?: (source: string | null) => void;
   commissionAmount?: number;
+
+  // Cost/stock/finance porting, PR3: signed flat price adjustment — own
+  // field, controlled-value-in/pre-derived-amount-out shape same as
+  // discount/commission above, but NOT a discount (see
+  // order-price-calculator.ts's calculateOrderTotal for why it's never
+  // routed through discount_type/discount_value/discount_amount).
+  priceAdjustment?: number;
+  onPriceAdjustmentChange?: (value: number) => void;
 }
 
 export function SummaryStep({
@@ -161,6 +169,8 @@ export function SummaryStep({
   source,
   onSourceChange,
   commissionAmount = 0,
+  priceAdjustment = 0,
+  onPriceAdjustmentChange,
 }: SummaryStepProps) {
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +190,10 @@ export function SummaryStep({
   // commission — never a legitimate negative value, so the same simple
   // `>0` visual treatment the discount line below already uses is fine here.
   const showCommissionLine = !!source && commissionAmount > 0;
+  // Cost/stock/finance porting, PR3: gated on `!== 0`, NOT the discount's
+  // `> 0` gate — a negative adjustment is a legitimate, displayable value
+  // here (unlike a negative discount, which is invalid input).
+  const showPriceAdjustmentLine = priceAdjustment !== 0;
 
   useEffect(() => {
     let el = topRef.current?.parentElement;
@@ -391,6 +405,43 @@ export function SummaryStep({
                 </span>
                 <span className="font-semibold text-orange-700 dark:text-orange-300">
                   -{formatCurrency(commissionAmount)}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ajuste de precio (price_adjustment) — cost/stock/finance porting, PR3.
+          Deliberately its own card, visually distinct (blue) from both the
+          commission line above (orange) and the discount card below
+          (green) — this value can be positive OR negative, unlike either
+          of those. */}
+      {onPriceAdjustmentChange && (
+        <Card className="bg-card">
+          <CardContent className="p-4 space-y-3">
+            <h3 className="text-sm font-medium">Ajuste de precio</h3>
+            <p className="text-xs text-muted-foreground">
+              Monto fijo, positivo o negativo, distinto del descuento.
+            </p>
+            <Input
+              type="number"
+              value={priceAdjustment === 0 ? "" : priceAdjustment}
+              onChange={(e) => {
+                const raw = e.target.value;
+                onPriceAdjustmentChange(raw === "" ? 0 : Number(raw));
+              }}
+              onFocus={(e) => e.target.select()}
+              placeholder="Ej: 500 o -500"
+            />
+            {showPriceAdjustmentLine && (
+              <div className="flex items-center justify-between text-sm rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-2">
+                <span className="text-blue-900 dark:text-blue-100">
+                  Ajuste de precio
+                </span>
+                <span className="font-semibold text-blue-700 dark:text-blue-300">
+                  {priceAdjustment > 0 ? "+" : "-"}
+                  {formatCurrency(Math.abs(priceAdjustment))}
                 </span>
               </div>
             )}
@@ -799,6 +850,15 @@ export function SummaryStep({
               <div className="flex justify-between text-orange-600 dark:text-orange-400">
                 <span>Comisión del canal</span>
                 <span>-{formatCurrency(commissionAmount)}</span>
+              </div>
+            )}
+            {showPriceAdjustmentLine && (
+              <div className="flex justify-between text-blue-600 dark:text-blue-400">
+                <span>Ajuste de precio</span>
+                <span>
+                  {priceAdjustment > 0 ? "+" : "-"}
+                  {formatCurrency(Math.abs(priceAdjustment))}
+                </span>
               </div>
             )}
             {deliveryType === "delivery" && !isFullDiscount && (

@@ -464,6 +464,20 @@ export function OrderDetailsModal({
               );
             })()}
 
+            {/* Cost/stock/finance porting, PR3: `!== 0` gated (not `> 0`
+                like discount/commission above) — negative price_adjustment
+                is a legitimate, displayable value here, own line, never
+                folded into the discount line. */}
+            {orderWithItems.price_adjustment !== 0 && (
+              <div className="flex justify-between text-sm text-blue-600">
+                <span>Ajuste de precio</span>
+                <span className="font-medium">
+                  {orderWithItems.price_adjustment > 0 ? "+" : "-"}
+                  {formatCurrency(Math.abs(orderWithItems.price_adjustment))}
+                </span>
+              </div>
+            )}
+
             <Separator />
 
             {/* Total */}

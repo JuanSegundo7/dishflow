@@ -554,3 +554,107 @@ export function useProductStats(
     },
   });
 }
+
+// ─── useRevenueBySource ─────────────────────────────────────────────────────
+
+// Cost/stock/finance porting, PR3: distinct bucket key for orders/external
+// income with no configured source — NEVER folded into a named channel
+// (a NULL source is meaningfully different from an order that came in
+// through a real, named channel with 0 revenue).
+export const UNKNOWN_SOURCE_KEY = "unknown";
+
+export interface RevenueBySourceEntry {
+  /** Raw `orders.source`/`external_income.source` value, or
+   *  `UNKNOWN_SOURCE_KEY` for NULL. Resolve to a human label via
+   *  `getOrderSources()` at render time (see order-details-modal.tsx's
+   *  identical resolution pattern) — this hook doesn't read
+   *  localStorage-backed source config itself, same separation the rest
+   *  of this file already keeps (queries are server data only). */
+  source: string;
+  revenue: number;
+  orders: number;
+}
+
+/**
+ * Groups completed orders' `total_amount` PLUS manually-logged
+ * `external_income` entries' `amount` (same "orders + external income"
+ * revenue composition useOrdersAnalytics already uses for `totalRevenue`
+ * above) by `source`, mirroring useTopBurgers/useProductStats' own
+ * "aggregate into a Record, then map to an array" shape. Orders/entries
+ * with a NULL source are bucketed under `UNKNOWN_SOURCE_KEY`, never
+ * silently merged into a named channel.
+ */
+export function useRevenueBySource(
+  selectedDate: Date,
+  viewMode: ViewMode = "month",
+  customRange?: { from: Date; to: Date }
+) {
+  const supabase = createClient();
+
+  return useQuery({
+    queryKey: [
+      "revenue-by-source",
+      selectedDate.toISOString(),
+      viewMode,
+      customRange?.from?.toISOString(),
+      customRange?.to?.toISOString(),
+    ],
+    queryFn: async (): Promise<RevenueBySourceEntry[]> => {
+      let start: Date, end: Date;
+      if (viewMode === "custom" && customRange) {
+        const fromStr = customRange.from.toLocaleDateString("en-CA", { timeZone: TZ });
+        const toStr = customRange.to.toLocaleDateString("en-CA", { timeZone: TZ });
+        start = arDateToUTC(fromStr, false);
+        end = arDateToUTC(toStr, true);
+      } else if (viewMode === "week") {
+        ({ start, end } = getWeekRange(selectedDate));
+      } else {
+        ({ start, end } = getMonthRange(selectedDate));
+      }
+
+      const startDateStr = toArDateStr(start);
+      const endDateStr = toArDateStr(end);
+
+      const [
+        { data: orders, error: ordersError },
+        { data: externalIncome, error: externalError },
+      ] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("source, total_amount")
+          .eq("status", "completed")
+          .gte("updated_at", start.toISOString())
+          .lte("updated_at", end.toISOString()),
+        supabase
+          .from("external_income")
+          .select("source, amount")
+          .gte("date", startDateStr)
+          .lte("date", endDateStr),
+      ]);
+
+      if (ordersError) throw ordersError;
+      if (externalError) throw externalError;
+
+      const bucketMap: Record<string, { revenue: number; orders: number }> = {};
+
+      for (const o of orders ?? []) {
+        const key = o.source ?? UNKNOWN_SOURCE_KEY;
+        if (!bucketMap[key]) bucketMap[key] = { revenue: 0, orders: 0 };
+        bucketMap[key].revenue += Number(o.total_amount);
+        bucketMap[key].orders += 1;
+      }
+
+      for (const e of externalIncome ?? []) {
+        const key = e.source ?? UNKNOWN_SOURCE_KEY;
+        if (!bucketMap[key]) bucketMap[key] = { revenue: 0, orders: 0 };
+        bucketMap[key].revenue += Number(e.amount);
+        // External income entries aren't "orders" — deliberately not
+        // incrementing the `orders` count for them, only `revenue`.
+      }
+
+      return Object.entries(bucketMap)
+        .map(([source, v]) => ({ source, ...v }))
+        .sort((a, b) => b.revenue - a.revenue);
+    },
+  });
+}

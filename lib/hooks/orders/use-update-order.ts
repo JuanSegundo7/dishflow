@@ -22,6 +22,9 @@ export interface UpdateOrderPayload {
   source?: string | null;
   commission_rate?: number;
   commission_amount?: number;
+  // Cost/stock/finance porting, PR3 — mirrors CreateOrderInput's own
+  // price_adjustment field (use-create-order.ts).
+  price_adjustment?: number;
 }
 
 export function useUpdateOrder() {
@@ -66,8 +69,14 @@ export function useUpdateOrder() {
       // discount_amount already is — see use-create-order.ts's identical
       // math for why this doesn't double-count against delivery_fee.
       const commissionAmount = payload.commission_amount ?? 0;
+      // Cost/stock/finance porting, PR3: same "already-frozen, sum as-is"
+      // rule as use-create-order.ts — payload.commission_amount already
+      // reflects a base that includes price_adjustment, so it's added here
+      // exactly once, alongside (not instead of) commissionAmount.
+      const priceAdjustment = payload.price_adjustment ?? 0;
       const finalTotal =
-        totalAmount -
+        totalAmount +
+        priceAdjustment -
         payload.discount_amount -
         commissionAmount +
         payload.delivery_fee;
@@ -92,6 +101,7 @@ export function useUpdateOrder() {
           source: payload.source ?? null,
           commission_rate: payload.commission_rate ?? 0,
           commission_amount: commissionAmount,
+          price_adjustment: priceAdjustment,
         })
         .eq("id", orderId)
         .select()

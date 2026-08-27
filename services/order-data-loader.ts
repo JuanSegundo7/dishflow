@@ -73,6 +73,11 @@ function loadSettings(order: OrderWithItems) {
     // derived total in this wizard already gets recomputed on load rather
     // than trusting a stale persisted value.
     source: order.source ?? null,
+    // Cost/stock/finance porting, PR3: unlike source, price_adjustment IS
+    // reloaded as-is (not re-derived) — it's a manually-entered flat
+    // amount, not something computed from live config the way commission
+    // is.
+    priceAdjustment: order.price_adjustment ?? 0,
   };
 }
 

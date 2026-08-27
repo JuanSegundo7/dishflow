@@ -227,9 +227,12 @@ export interface Order {
   // rate for it.
   commission_rate: number;
   commission_amount: number;
-  // Reserved by the PR2 migration for PR3 (a later PR in this stacked
-  // chain, out of scope here) — NOT wired into any calculation yet. Always
-  // 0 until PR3 wires it up.
+  // Cost/stock/finance porting, PR3: signed flat amount adjusting the
+  // order total, added to itemsTotal BEFORE discount/commission are
+  // subtracted (see use-create-order.ts/use-update-order.ts's `total`
+  // formula). Own field — never derived from or folded into
+  // discount_type/discount_value/discount_amount. Column added by PR2's
+  // migration (scripts/043), wired up here in PR3.
   price_adjustment: number;
   created_at: string;
   updated_at: string;

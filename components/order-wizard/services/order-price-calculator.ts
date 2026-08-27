@@ -201,6 +201,19 @@ export class OrderPriceCalculator {
      * "builder-wizard" orderFlow.
      */
     additionalTotal?: number;
+    /**
+     * Cost/stock/finance porting, PR3: a signed flat amount adjusting the
+     * order total up or down (e.g. a manual price correction), kept
+     * strictly separate from discount_type/discount_value/discount_amount
+     * — it is NOT a discount and must never be routed through the discount
+     * fields (a negative discount would be structurally invalid; a
+     * negative price_adjustment is a legitimate value here). Optional,
+     * defaults to 0 — omitting it (every pre-PR3 caller) is a byte-for-byte
+     * no-op. Added into the total BEFORE commission is computed, so
+     * commission is charged on `subtotal + priceAdjustment`, not on
+     * `subtotal` alone.
+     */
+    priceAdjustment?: number;
   }) {
     const safeBurgers = Array.isArray(params.selectedBurgers)
       ? params.selectedBurgers
@@ -221,8 +234,6 @@ export class OrderPriceCalculator {
       params.additionalTotal ?? 0,
     );
 
-    console.log("🔍 SUBTOTAL:", subtotal);
-
     const normalizedDiscountType =
       params.discountType === "amount" || params.discountType === "percentage"
         ? params.discountType
@@ -234,26 +245,28 @@ export class OrderPriceCalculator {
       params.discountValue || 0,
     );
 
-    console.log("🔍 DISCOUNT AMOUNT:", discountAmount);
+    // Cost/stock/finance porting, PR3: price_adjustment is a signed flat
+    // amount added to the base BEFORE commission is computed — commission
+    // is charged on `subtotal + priceAdjustment`, not on `subtotal` alone.
+    // discountAmount above deliberately stays computed off `subtotal` only
+    // (unchanged) — price_adjustment never touches the discount base/fields.
+    const priceAdjustment = Number(params.priceAdjustment) || 0;
+    const commissionBase = subtotal + priceAdjustment;
 
-    // Commission base is `subtotal` (items only) — deliberately computed
-    // BEFORE deliveryFee is added below, so delivery is never part of the
-    // commission base (confirmed business rule).
+    // Commission base is `subtotal + priceAdjustment` (items + adjustment,
+    // still excluding delivery) — deliberately computed BEFORE deliveryFee
+    // is added below, so delivery is never part of the commission base
+    // (confirmed business rule).
     const commissionAmount = this.calculateCommission(
-      subtotal,
+      commissionBase,
       params.commissionRate || 0,
     );
-
-    console.log("🔍 COMMISSION AMOUNT:", commissionAmount);
 
     const deliveryFee =
       params.deliveryType === "delivery" ? Number(params.deliveryFee) || 0 : 0;
 
-    console.log("🔍 DELIVERY FEE:", deliveryFee);
-
-    const total = subtotal - discountAmount - commissionAmount + deliveryFee;
-
-    console.log("🔍 TOTAL FINAL:", total);
+    const total =
+      subtotal + priceAdjustment - discountAmount - commissionAmount + deliveryFee;
 
     return Number.isFinite(total) ? total : 0;
   }

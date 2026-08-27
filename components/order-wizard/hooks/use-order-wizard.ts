@@ -161,9 +161,18 @@ export function useOrderWizard({
     return config?.commissionRate ?? 0;
   }, [settings.source]);
 
+  // Cost/stock/finance porting, PR3: commission's base now includes
+  // price_adjustment (subtotal + priceAdjustment), matching
+  // OrderPriceCalculator.calculateOrderTotal's own commission base below —
+  // this is the SAME memo used for on-screen display (summary-step's
+  // commission line) and the frozen orderPayload value, so display and
+  // payload can never disagree, same guarantee as PR2's commissionAmount.
   const commissionAmount = useMemo(() => {
-    return OrderPriceCalculator.calculateCommission(subtotal, commissionRate);
-  }, [subtotal, commissionRate]);
+    return OrderPriceCalculator.calculateCommission(
+      subtotal + settings.priceAdjustment,
+      commissionRate,
+    );
+  }, [subtotal, settings.priceAdjustment, commissionRate]);
 
   const orderTotal = useMemo(() => {
     const raw = OrderPriceCalculator.calculateOrderTotal({
@@ -178,13 +187,15 @@ export function useOrderWizard({
       discountValue: settings.discountValue,
       commissionRate,
       additionalTotal: sushiAdditionalTotal,
+      priceAdjustment: settings.priceAdjustment,
     });
 
-    // Si el descuento es 100%, el total es 0 (incluye delivery fee)
-    if (
-      settings.discountType === "percentage" &&
-      settings.discountValue >= 100
-    ) {
+    // Si el descuento absorbe todo el subtotal, el total es 0 (incluye
+    // delivery fee) — cubre tanto un descuento porcentual del 100% como un
+    // descuento tipo "amount" que Math.min-clampea al subtotal en
+    // calculateDiscountAmount; ambos casos deben zerear commission_amount
+    // igual (ver orderPayload's discount_amount/commission_amount override).
+    if (discountAmount >= subtotal) {
       return 0;
     }
 
@@ -201,6 +212,9 @@ export function useOrderWizard({
     settings.discountValue,
     commissionRate,
     sushiAdditionalTotal,
+    settings.priceAdjustment,
+    discountAmount,
+    subtotal,
   ]);
 
   const extrasTotal = useMemo(() => {
@@ -347,11 +361,25 @@ export function useOrderWizard({
         discount_value: settings.discountValue,
         // 🔑 FIX: discount_amount guardado en DB también refleja el total real
         // (incluye delivery fee cuando el descuento es 100%)
+        // Cost/stock/finance porting, PR3: priceAdjustment is included in
+        // this override too — the total_amount formula this absorbs into
+        // (use-create-order.ts: `itemsTotal + price_adjustment -
+        // discountAmount - commissionAmount + deliveryFee`) now has
+        // price_adjustment as an addend, so discountAmount must absorb it
+        // too for the 100%-discount override to still land on exactly 0.
         discount_amount:
           orderTotal === 0
             ? subtotal +
+              settings.priceAdjustment +
               (effectiveDeliveryType === "delivery" ? settings.deliveryFee : 0)
             : discountAmount,
+        // Cost/stock/finance porting, PR3: signed flat amount, own field —
+        // never folded into discount_type/discount_value/discount_amount
+        // above. Not zeroed by the 100%-discount override (unlike
+        // commission_amount below) — see discount_amount's own override
+        // just above, which already absorbs it so the total still lands on
+        // exactly 0.
+        price_adjustment: settings.priceAdjustment,
         items: allItems,
         notes: settings.notes || null,
         delivery_time: settings.deliveryTime || null,

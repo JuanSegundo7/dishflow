@@ -18,13 +18,24 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Plus, Trash2, CalendarIcon, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, CalendarIcon, Wallet, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useExternalIncome,
   useCreateExternalIncome,
   useDeleteExternalIncome,
 } from "@/lib/hooks/orders/use-external-income";
 import { formatCurrency } from "@/lib/utils/format";
+// Cost/stock/finance porting, PR3: reuse the SAME operator-configured
+// source list the order wizard already uses (summary-step.tsx) — do not
+// invent a separate source list for manual income entries.
+import { getOrderSources, type OrderSourceConfig } from "@/lib/utils/commission";
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -51,6 +62,14 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [selectedDate, setSelectedDate] = useState<string>(todayArStr());
+  // Cost/stock/finance porting, PR3: manual-entry source tagging — same
+  // "read once on mount, no live subscription" approach summary-step.tsx
+  // already uses for this same localStorage-backed config.
+  const [source, setSource] = useState<string | null>(null);
+  const [orderSources, setOrderSources] = useState<OrderSourceConfig[]>([]);
+  useEffect(() => {
+    setOrderSources(getOrderSources());
+  }, []);
 
   const totalExternal = incomes?.reduce((acc, e) => acc + Number(e.amount), 0) ?? 0;
   const totalPages = Math.ceil((incomes?.length ?? 0) / PAGE_SIZE);
@@ -60,6 +79,7 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
     setAmount("");
     setDescription("");
     setSelectedDate(todayArStr());
+    setSource(null);
   }
 
   async function handleSave() {
@@ -70,6 +90,7 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
       date: selectedDate,
       amount: parsed,
       description: description.trim() || null,
+      source,
     });
 
     setDialogOpen(false);
@@ -90,8 +111,8 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <ExternalLink className="h-4 w-4 text-muted-foreground" />
-              Ingresos externos
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+              Ingresos manuales
             </CardTitle>
             <Button
               size="sm"
@@ -112,7 +133,7 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
             </div>
           ) : !incomes || incomes.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              Sin ingresos externos en este período
+              Sin ingresos manuales en este período
             </p>
           ) : (
             <div className="space-y-2">
@@ -184,7 +205,7 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Agregar ingreso externo</DialogTitle>
+            <DialogTitle>Agregar ingreso manual</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -231,6 +252,36 @@ export function ExternalIncomePanel({ startDate, endDate }: ExternalIncomePanelP
                 onChange={(e) => setAmount(e.target.value)}
               />
             </div>
+
+            {/* Cost/stock/finance porting, PR3: source (sales channel) tag —
+                reuses the same operator-configured getOrderSources() list
+                the order wizard's summary-step.tsx uses, only rendered
+                when there's actually config to pick from (same
+                hasSourceOptions gate summary-step.tsx uses). */}
+            {orderSources.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">
+                  Canal{" "}
+                  <span className="text-muted-foreground font-normal">(opcional)</span>
+                </label>
+                <Select
+                  value={source ?? "__none__"}
+                  onValueChange={(v) => setSource(v === "__none__" ? null : v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sin canal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin canal</SelectItem>
+                    {orderSources.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Description */}
             <div className="space-y-1.5">

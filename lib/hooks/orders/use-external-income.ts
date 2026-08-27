@@ -36,6 +36,12 @@ export function useCreateExternalIncome(startDate: string, endDate: string) {
       date: string;
       amount: number;
       description: string | null;
+      // Cost/stock/finance porting, PR3: which sales channel this manual
+      // income entry belongs to (see lib/utils/commission.ts's
+      // getOrderSources() — same operator-configured source list the order
+      // wizard already uses). Column added by PR2's migration
+      // (scripts/043), wired up here in PR3. Null = no channel tagged.
+      source?: string | null;
     }) => {
       const { data, error } = await supabase
         .from("external_income")

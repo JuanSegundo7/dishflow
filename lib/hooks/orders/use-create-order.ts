@@ -51,11 +51,15 @@ export interface CreateOrderInput {
   // from + its commission, frozen by the caller (use-order-wizard.ts) at
   // submit time from whatever getOrderSources() config was current then —
   // this hook writes them as-is, it never re-reads live source config
-  // itself. `price_adjustment` is NOT threaded here — reserved column only,
-  // wired starting PR3.
+  // itself.
   source?: string | null;
   commission_rate?: number;
   commission_amount?: number;
+  // Cost/stock/finance porting, PR3: signed flat amount added to
+  // itemsTotal BEFORE discount/commission are subtracted (see this hook's
+  // `total` formula below). Own field, never derived from or folded into
+  // discount_type/discount_value/discount_amount.
+  price_adjustment?: number;
   save_customer?: boolean;
   new_customer?: {
     name: string;
@@ -90,7 +94,14 @@ export function useCreateOrder() {
       // against items subtotal only (delivery fee excluded), so it's safe
       // to combine here alongside delivery_fee without double-counting.
       const commissionAmount = input.commission_amount ?? 0;
-      const total = itemsTotal - discountAmount - commissionAmount + input.delivery_fee;
+      // Cost/stock/finance porting, PR3: `input.commission_amount` is
+      // already frozen by the caller against a base that includes
+      // price_adjustment (see use-order-wizard.ts's commissionAmount memo)
+      // — this hook does NOT re-derive commission, it just sums the
+      // already-frozen amount, so priceAdjustment is only added here once.
+      const priceAdjustment = input.price_adjustment ?? 0;
+      const total =
+        itemsTotal + priceAdjustment - discountAmount - commissionAmount + input.delivery_fee;
 
       const { data: order, error } = await supabase
         .from("orders")
@@ -111,6 +122,7 @@ export function useCreateOrder() {
           source: input.source ?? null,
           commission_rate: input.commission_rate ?? 0,
           commission_amount: input.commission_amount ?? 0,
+          price_adjustment: priceAdjustment,
         })
         .select()
         .single();
