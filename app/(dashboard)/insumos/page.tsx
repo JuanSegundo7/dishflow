@@ -17,6 +17,7 @@ import {
 import { Plus } from "lucide-react";
 import { useAllSupplies } from "@/lib/hooks/supplies/use-supplies";
 import { useDeleteSupply, useToggleSupplyActive } from "@/lib/hooks/supplies/use-supplies-crud";
+import { useComboLinesNotCounted } from "@/lib/hooks/supplies/use-combo-lines-not-counted";
 import { SupplyList } from "@/components/supplies/supply-list";
 import { SupplyFormDialog } from "@/components/supplies/supply-form-dialog";
 import { LowStockBanner } from "@/components/supplies/low-stock-banner";
@@ -38,6 +39,10 @@ export default function InsumosPage() {
   const { data: supplies, isLoading } = useAllSupplies();
   const deleteSupply = useDeleteSupply();
   const toggleActive = useToggleSupplyActive();
+  // Cost/stock/finance porting, PR4 task 7a.10 — informational note only,
+  // see use-combo-lines-not-counted.ts for why this isn't sourced from a
+  // persisted DeductionPlan.skipped record.
+  const { data: comboLinesNotCounted } = useComboLinesNotCounted();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
@@ -78,6 +83,14 @@ export default function InsumosPage() {
 
       <div className="flex-1 overflow-auto p-6 space-y-4">
         <LowStockBanner supplies={supplies ?? []} />
+
+        {!!comboLinesNotCounted && comboLinesNotCounted > 0 && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            {comboLinesNotCounted}{" "}
+            {comboLinesNotCounted === 1 ? "línea de combo no" : "líneas de combo no"} contabilizada
+            {comboLinesNotCounted === 1 ? "" : "s"} contra el stock (deducción de combos: próximamente).
+          </div>
+        )}
 
         <Card className="bg-card">
           <CardContent className="p-4">

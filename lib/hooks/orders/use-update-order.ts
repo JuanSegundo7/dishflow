@@ -3,6 +3,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { OrderItemInput } from "./use-create-order";
+import {
+  applyStockDeduction,
+  reverseStockDeduction,
+  invalidateOrderStockQueries,
+} from "@/lib/hooks/supplies/use-order-stock-sync";
+import type { DeductionPlanItem } from "@/lib/services/stock-deduction";
 
 export interface UpdateOrderPayload {
   customer_id: string | null;
@@ -39,6 +45,35 @@ export function useUpdateOrder() {
       orderId: string;
       payload: UpdateOrderPayload;
     }) => {
+      // Cost/stock/finance porting, PR4 task 7a.8 (R2 guard): this
+      // mutation deletes and re-inserts EVERY order_items row below,
+      // regardless of the order's status — a completed order's stock
+      // ledger (order_stock_movements, keyed by order_id+supply_id, not
+      // order_item_id — see scripts/044-order-stock-movements.sql — so it
+      // survives the delete+reinsert unharmed on its own) would otherwise
+      // go silently stale against whatever the NEW item lines actually
+      // consume. Currently dead-reachable in the UI (edit only ever lists
+      // "new"/"ready" orders — see components/orders/orders-dashboard.tsx's
+      // canEdit gate), but this guard must not be skipped just because
+      // it's presently unreachable: reverse the existing ledger before the
+      // delete below, then reapply a fresh plan (built from the NEW
+      // payload.items — no DB round trip needed, see
+      // lib/services/stock-deduction.ts's DeductionPlanItem shape) after
+      // the new order_items/order_item_modifiers are inserted.
+      const { data: existingOrder, error: existingOrderError } = await supabase
+        .from("orders")
+        .select("status")
+        .eq("id", orderId)
+        .single();
+
+      if (existingOrderError) throw existingOrderError;
+
+      const wasCompleted = existingOrder?.status === "completed";
+
+      if (wasCompleted) {
+        await reverseStockDeduction(supabase, orderId);
+      }
+
       // 1️⃣ Eliminar order_item_modifiers de los items viejos
       const { data: oldItems } = await supabase
         .from("order_items")
@@ -162,13 +197,36 @@ export function useUpdateOrder() {
         if (extrasError) throw extrasError;
       }
 
+      // R2 guard, continued (see the reverse call near the top of this
+      // function): reapply stock deduction against the NEW item lines,
+      // built straight from `payload.items` — no need to read the
+      // just-inserted rows back, OrderItemInput already carries every
+      // field buildStockDeductionPlan needs (kind/product_id/quantity/
+      // variant_selections/extras).
+      if (wasCompleted) {
+        const deductionItems: DeductionPlanItem[] = payload.items.map((item) => ({
+          kind: item.kind,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          burger_name: item.burger_name,
+          variant_selections: item.variant_selections,
+          extras: item.extras.map((extra) => ({
+            product_id: extra.product_id,
+            quantity: extra.quantity,
+          })),
+        }));
+
+        await applyStockDeduction(supabase, orderId, deductionItems);
+      }
+
       return updatedOrder;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { orderId }) => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["orders-history"] });
       queryClient.invalidateQueries({ queryKey: ["order-with-items"] });
       queryClient.invalidateQueries({ queryKey: ["today-orders-count"] });
+      invalidateOrderStockQueries(queryClient, orderId);
     },
     onError: (error) => {
       console.error("❌ Error actualizando pedido:", error);

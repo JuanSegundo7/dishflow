@@ -304,6 +304,40 @@ export interface OrderWithItems extends Order {
   items: OrderItemWithExtras[];
 }
 
+// ============================================================
+// STOCK DEDUCTION (cost/stock/finance porting, PR4 — Group 7a, see
+// scripts/044-order-stock-movements.sql). Ledger of raw-supply stock
+// actually decremented for a completed order, keyed by (order_id,
+// supply_id) — see that migration's header for why this is order-scoped
+// rather than order_item-scoped.
+// ============================================================
+
+export interface OrderStockMovement {
+  id: string;
+  order_id: string;
+  supply_id: string;
+  quantity: number;
+  created_at: string;
+}
+
+/** One aggregated supply consumption for an order — always positive. */
+export interface DeductionLine {
+  supply_id: string;
+  quantity: number;
+}
+
+/**
+ * Result of lib/services/stock-deduction.ts's buildStockDeductionPlan.
+ * `skipped` surfaces order_item lines that were NOT deducted rather than
+ * silently dropping them — in this PR (7a) that's exclusively kind="combo"
+ * lines, always with reason "no-recipe" (combo-slot parsing, and therefore
+ * "combo-unparsed", is 7b's job — a separate later PR).
+ */
+export interface DeductionPlan {
+  lines: DeductionLine[];
+  skipped: { reason: "combo-unparsed" | "no-recipe"; label: string }[];
+}
+
 // ============================================
 // EXTERNAL INCOME
 // ============================================

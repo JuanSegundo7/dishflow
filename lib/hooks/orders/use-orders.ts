@@ -3,6 +3,33 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import type { Order, OrderStatus, OrderWithItems } from "@/lib/types";
+import {
+  syncOrderStockForTransition,
+  invalidateOrderStockQueries,
+} from "@/lib/hooks/supplies/use-order-stock-sync";
+
+/**
+ * Cost/stock/finance porting, PR4 (Group 7a): fetches an order's CURRENT
+ * status right before a status-writing mutation updates it, so
+ * syncOrderStockForTransition below always gets a fresh (from, to) pair to
+ * decide apply/reverse/no-op from — never trusting a possibly-stale value
+ * the caller might have (e.g. react-query cache). Shared by all four
+ * status-writing mutations in this file (useUpdateOrderStatus,
+ * useCancelOrder, useReactivateOrder, useCompleteOrder).
+ */
+async function fetchCurrentOrderStatus(
+  supabase: ReturnType<typeof createClient>,
+  orderId: string,
+): Promise<OrderStatus> {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .single();
+
+  if (error) throw error;
+  return data.status as OrderStatus;
+}
 
 export function useOrders() {
   const supabase = createClient();
@@ -134,12 +161,27 @@ export function useUpdateOrderStatus() {
       orderId: string;
       status: OrderStatus;
     }) => {
+      // Cost/stock/finance porting, PR4 (Group 7a): this is a generic
+      // status-setter also capable of writing "completed" (see
+      // components/orders/orders-dashboard.tsx's drag-and-drop + "Marcar
+      // completado" flows — both route through this hook, not the
+      // dedicated useCompleteOrder below) — must sync stock whenever the
+      // transition enters OR leaves "completed".
+      const previousStatus = await fetchCurrentOrderStatus(supabase, orderId);
+
       const { error } = await supabase
         .from("orders")
         .update({ status, updated_at: new Date().toISOString() })
         .eq("id", orderId);
 
       if (error) throw error;
+
+      await syncOrderStockForTransition({
+        supabase,
+        orderId,
+        from: previousStatus,
+        to: status,
+      });
 
       return { orderId, status };
     },
@@ -170,7 +212,7 @@ export function useUpdateOrderStatus() {
       }
     },
 
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.refetchQueries({
         queryKey: ["orders"],
         type: "active",
@@ -180,6 +222,8 @@ export function useUpdateOrderStatus() {
         queryKey: ["orders-history"],
         exact: false,
       });
+
+      invalidateOrderStockQueries(queryClient, data.orderId);
     },
   });
 }
@@ -230,6 +274,11 @@ export function useCancelOrder() {
 
   return useMutation({
     mutationFn: async ({ orderId }: { orderId: string }) => {
+      // Cost/stock/finance porting, PR4 (Group 7a): reverses stock when the
+      // order being canceled was previously "completed" — a no-op via
+      // syncOrderStockForTransition for every other previous status.
+      const previousStatus = await fetchCurrentOrderStatus(supabase, orderId);
+
       const { error } = await supabase
         .from("orders")
         .update({
@@ -239,6 +288,13 @@ export function useCancelOrder() {
         .eq("id", orderId);
 
       if (error) throw error;
+
+      await syncOrderStockForTransition({
+        supabase,
+        orderId,
+        from: previousStatus,
+        to: "canceled",
+      });
     },
 
     onMutate: async ({ orderId }) => {
@@ -270,11 +326,13 @@ export function useCancelOrder() {
       }
     },
 
-    onSuccess: () => {
+    onSuccess: (_data, { orderId }) => {
       queryClient.invalidateQueries({
         queryKey: ["orders-history"],
         exact: false,
       });
+
+      invalidateOrderStockQueries(queryClient, orderId);
     },
   });
 }
@@ -291,6 +349,14 @@ export function useReactivateOrder() {
       orderId: string;
       nextStatus: "new" | "completed";
     }) => {
+      // Cost/stock/finance porting, PR4 (Group 7a): can transition an order
+      // back to "completed" from a terminal state (see app/(dashboard)/
+      // historial/page.tsx's handleReactivateOrder) — sync applies whenever
+      // the new status is "completed"; syncOrderStockForTransition itself
+      // no-ops if, for some reason, the order was somehow already
+      // "completed" (previousStatus === nextStatus).
+      const previousStatus = await fetchCurrentOrderStatus(supabase, orderId);
+
       const { error } = await supabase
         .from("orders")
         .update({
@@ -300,6 +366,13 @@ export function useReactivateOrder() {
         .eq("id", orderId);
 
       if (error) throw error;
+
+      await syncOrderStockForTransition({
+        supabase,
+        orderId,
+        from: previousStatus,
+        to: nextStatus,
+      });
     },
 
     onMutate: async ({ orderId, nextStatus }) => {
@@ -325,11 +398,13 @@ export function useReactivateOrder() {
       }
     },
 
-    onSuccess: () => {
+    onSuccess: (_data, { orderId }) => {
       queryClient.invalidateQueries({
         queryKey: ["orders-history"],
         exact: false,
       });
+
+      invalidateOrderStockQueries(queryClient, orderId);
     },
   });
 }
@@ -340,6 +415,16 @@ export function useCompleteOrder() {
 
   return useMutation({
     mutationFn: async (orderId: string) => {
+      // Cost/stock/finance porting, PR4 (Group 7a): currently unreachable
+      // from any UI call site (components/orders/orders-dashboard.tsx
+      // routes every "mark completed" flow through useUpdateOrderStatus
+      // instead — verified by grep, not assumed), but wired for
+      // correctness per this PR's task list, matching this repo's "must
+      // not silently corrupt the ledger if that ever becomes reachable"
+      // convention (see use-update-order.ts's R2 guard for the same
+      // reasoning applied elsewhere).
+      const previousStatus = await fetchCurrentOrderStatus(supabase, orderId);
+
       const { error } = await supabase
         .from("orders")
         .update({
@@ -350,9 +435,19 @@ export function useCompleteOrder() {
         .eq("id", orderId);
 
       if (error) throw error;
+
+      await syncOrderStockForTransition({
+        supabase,
+        orderId,
+        from: previousStatus,
+        to: "completed",
+      });
+
+      return { orderId };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      invalidateOrderStockQueries(queryClient, data.orderId);
     },
   });
 }
@@ -371,6 +466,39 @@ export function useQuickPatchOrder() {
       total_amount: number;
       payment_method: "cash" | "transfer";
     }) => {
+      // Cost/stock/finance porting, PR4 task 7a.9 (R4 guard): this mutation
+      // writes total_amount as a raw manual override — it has no access to
+      // itemsTotal/discountAmount (order-card.tsx/order-card-mobile.tsx,
+      // its only two call sites, only ever pass a hand-typed number), so
+      // there is no formula to correctly "recompute" here the way
+      // use-create-order.ts/use-update-order.ts do from their own item
+      // lines. commission_amount/price_adjustment (PR2/PR3) are frozen
+      // amounts derived from a DIFFERENT base (the pre-override total) —
+      // silently letting this mutation overwrite total_amount out from
+      // under them would leave those two fields arithmetically
+      // inconsistent with the new total with no way for this hook to fix
+      // them correctly. Smaller, more surgical fix (per this PR's task
+      // instructions) than trying to reconstruct/re-derive a formula this
+      // call site was never given the inputs for: block quick-patch
+      // entirely on any order that already carries a nonzero commission or
+      // price adjustment, with a clear, specific error message. Full edits
+      // to such an order go through the order wizard's edit flow
+      // (use-update-order.ts), which DOES have the full item/discount
+      // breakdown needed to recompute correctly.
+      const { data: existing, error: fetchError } = await supabase
+        .from("orders")
+        .select("commission_amount, price_adjustment")
+        .eq("id", orderId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      if ((existing?.commission_amount ?? 0) !== 0 || (existing?.price_adjustment ?? 0) !== 0) {
+        throw new Error(
+          "No se puede editar el monto rápidamente en un pedido con comisión o ajuste de precio — editalo desde el pedido completo.",
+        );
+      }
+
       const { error } = await supabase
         .from("orders")
         .update({
