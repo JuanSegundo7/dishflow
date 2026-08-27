@@ -195,6 +195,17 @@ export function SummaryStep({
   // here (unlike a negative discount, which is invalid input).
   const showPriceAdjustmentLine = priceAdjustment !== 0;
 
+  // Local raw text mirrors exactly what's typed (including a lone "-" while
+  // the user is mid-entry of a negative value) — the numeric prop only
+  // updates once the text parses to a finite number, so typing "-" never
+  // propagates NaN into settings.priceAdjustment/the order payload.
+  const [priceAdjustmentInput, setPriceAdjustmentInput] = useState(
+    priceAdjustment === 0 ? "" : String(priceAdjustment),
+  );
+  useEffect(() => {
+    setPriceAdjustmentInput(priceAdjustment === 0 ? "" : String(priceAdjustment));
+  }, [priceAdjustment]);
+
   useEffect(() => {
     let el = topRef.current?.parentElement;
     while (el) {
@@ -426,10 +437,18 @@ export function SummaryStep({
             </p>
             <Input
               type="number"
-              value={priceAdjustment === 0 ? "" : priceAdjustment}
+              value={priceAdjustmentInput}
               onChange={(e) => {
                 const raw = e.target.value;
-                onPriceAdjustmentChange(raw === "" ? 0 : Number(raw));
+                setPriceAdjustmentInput(raw);
+                if (raw === "") {
+                  onPriceAdjustmentChange(0);
+                  return;
+                }
+                const parsed = Number(raw);
+                if (Number.isFinite(parsed)) {
+                  onPriceAdjustmentChange(parsed);
+                }
               }}
               onFocus={(e) => e.target.select()}
               placeholder="Ej: 500 o -500"

@@ -55,6 +55,7 @@ export function useCreateExternalIncome(startDate: string, endDate: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKey(startDate, endDate) });
       queryClient.invalidateQueries({ queryKey: ["orders-analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["revenue-by-source"] });
     },
   });
 }
@@ -75,6 +76,7 @@ export function useDeleteExternalIncome(startDate: string, endDate: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKey(startDate, endDate) });
       queryClient.invalidateQueries({ queryKey: ["orders-analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["revenue-by-source"] });
     },
   });
 }
