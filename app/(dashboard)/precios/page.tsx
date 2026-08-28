@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronDown, ChevronUp, Check, X } from "lucide-react";
 import { useProducts, useAddonProducts, useProductWithVariants } from "@/lib/hooks/use-products";
 import { useUpdateProduct } from "@/lib/hooks/use-products-crud";
+import { useAllSupplies } from "@/lib/hooks/supplies/use-supplies";
+import { useProductSuppliesBulk } from "@/lib/hooks/supplies/use-product-supplies";
+import { computeProductCost, computeMargin } from "@/lib/services/recipe-cost";
+import { RecipeEditor } from "@/components/precios/recipe-editor";
 import { formatCurrency } from "@/lib/utils/format";
-import type { ExtraCategory } from "@/lib/types";
+import type { ExtraCategory, ProductSupplyWithSupply, Supply } from "@/lib/types";
 import { useVertical } from "@/components/providers/vertical-provider";
+import {
+  getOrderSources,
+  saveOrderSources,
+  type OrderSourceConfig,
+} from "@/lib/utils/commission";
+import { Trash2, Plus } from "lucide-react";
+import { nanoid } from "nanoid";
 
 const DEFAULT_DELIVERY_FEE_KEY = "restaurant_default_delivery_fee";
 
@@ -99,6 +110,51 @@ export default function PricingPage() {
     null,
   );
 
+  // Cost/stock/finance porting, PR1: per-product cost/margin, derived (never
+  // its own cached query — see lib/hooks/supplies/use-product-supplies.ts's
+  // architectural-invariant doc comment). useAllSupplies() (not
+  // useSupplies()) on purpose: it includes inactive supplies too, which is
+  // what lets computeProductCost tell "inactive" apart from "missing"
+  // (QA2.3) instead of both looking like a hole in the live-supplies map.
+  const burgerIds = useMemo(() => (burgers ?? []).map((b) => b.id), [burgers]);
+  const { data: allSupplies } = useAllSupplies();
+  const { data: recipesByProduct } = useProductSuppliesBulk(burgerIds);
+
+  const supplyById = useMemo(() => {
+    const map: Record<string, Supply> = {};
+    for (const supply of allSupplies ?? []) map[supply.id] = supply;
+    return map;
+  }, [allSupplies]);
+
+  const costByProduct = useMemo(() => {
+    const map: Record<string, ReturnType<typeof computeProductCost>> = {};
+    // allSupplies resolves after recipesByProduct on a cold load in practice
+    // (two independent queries racing) — without this guard, supplyById is
+    // still {} while recipesByProduct has already arrived, so every recipe
+    // line's supply is momentarily undefined and every burger flashes
+    // "Receta incompleta" even when its recipe is actually complete.
+    if (!allSupplies) return map;
+
+    for (const burger of burgers ?? []) {
+      const rawLines = recipesByProduct?.[burger.id] ?? [];
+      // Rebuild each line's `supply` from the freshest ["all-supplies"]
+      // data instead of trusting the bulk query's embedded join, which can
+      // go stale: editing a supply's cost_per_unit invalidates
+      // ["supplies"]/["all-supplies"] but not ["product-supplies-bulk", ...]
+      // (see use-product-supplies.ts). Without this override, QA2.2
+      // (editing a supply's cost then revisiting /precios) would show a
+      // stale cost until an unrelated refetch.
+      const freshLines: ProductSupplyWithSupply[] = rawLines.map((line) => ({
+        ...line,
+        supply: supplyById[line.supply_id] as ProductSupplyWithSupply["supply"],
+      }));
+
+      map[burger.id] = computeProductCost(freshLines);
+    }
+
+    return map;
+  }, [burgers, recipesByProduct, supplyById]);
+
   const [defaultDeliveryFee, setDefaultDeliveryFee] = useState(2000);
   const [editingDeliveryFee, setEditingDeliveryFee] = useState(false);
   const [deliveryFeeInput, setDeliveryFeeInput] = useState("");
@@ -113,6 +169,63 @@ export default function PricingPage() {
     localStorage.setItem(DEFAULT_DELIVERY_FEE_KEY, String(value));
     setDefaultDeliveryFee(value);
     setEditingDeliveryFee(false);
+  };
+
+  // Cost/stock/finance porting, PR2: order sources + their commission rates
+  // — operator-configured localStorage data (see lib/utils/commission.ts),
+  // same read-once-on-mount / write-through-on-change pattern as
+  // defaultDeliveryFee above.
+  const [orderSources, setOrderSources] = useState<OrderSourceConfig[]>([]);
+  const [newSourceLabel, setNewSourceLabel] = useState("");
+  const [newSourceRate, setNewSourceRate] = useState("");
+  const [editingSourceKey, setEditingSourceKey] = useState<string | null>(null);
+  const [editSourceLabel, setEditSourceLabel] = useState("");
+  const [editSourceRate, setEditSourceRate] = useState("");
+
+  useEffect(() => {
+    setOrderSources(getOrderSources());
+  }, []);
+
+  const persistOrderSources = (next: OrderSourceConfig[]) => {
+    saveOrderSources(next);
+    setOrderSources(next);
+  };
+
+  const handleAddSource = () => {
+    if (!newSourceLabel.trim()) return;
+    const rate = Math.max(0, Number(newSourceRate) || 0);
+    persistOrderSources([
+      ...orderSources,
+      { key: nanoid(), label: newSourceLabel.trim(), commissionRate: rate },
+    ]);
+    setNewSourceLabel("");
+    setNewSourceRate("");
+  };
+
+  const handleStartEditSource = (s: OrderSourceConfig) => {
+    setEditingSourceKey(s.key);
+    setEditSourceLabel(s.label);
+    setEditSourceRate(s.commissionRate.toString());
+  };
+
+  const handleSaveSource = () => {
+    if (!editingSourceKey) return;
+    persistOrderSources(
+      orderSources.map((s) =>
+        s.key === editingSourceKey
+          ? {
+              ...s,
+              label: editSourceLabel.trim() || s.label,
+              commissionRate: Math.max(0, Number(editSourceRate) || 0),
+            }
+          : s,
+      ),
+    );
+    setEditingSourceKey(null);
+  };
+
+  const handleDeleteSource = (key: string) => {
+    persistOrderSources(orderSources.filter((s) => s.key !== key));
   };
 
   const handleStartEdit = (id: string, currentPrice: number) => {
@@ -215,6 +328,115 @@ export default function PricingPage() {
           </CardContent>
         </Card>
 
+        {/* Cost/stock/finance porting, PR2: order sources (sales channels) +
+            their commission rates */}
+        <Card className="bg-card">
+          <CardHeader>
+            <CardTitle>Canales de venta y comisiones</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {orderSources.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No hay canales configurados todavía.
+              </p>
+            )}
+
+            {orderSources.map((s) => (
+              <div
+                key={s.key}
+                className="flex items-center justify-between rounded-lg bg-secondary/30 p-3"
+              >
+                {editingSourceKey === s.key ? (
+                  <div className="flex flex-1 items-center gap-2">
+                    <Input
+                      value={editSourceLabel}
+                      onChange={(e) => setEditSourceLabel(e.target.value)}
+                      className="w-40"
+                      autoFocus
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editSourceRate}
+                      onChange={(e) => setEditSourceRate(e.target.value)}
+                      className="w-20"
+                    />
+                    <span className="text-xs text-muted-foreground">% comisión</span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-primary"
+                      onClick={handleSaveSource}
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => setEditingSourceKey(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="font-medium">{s.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {s.commissionRate}% de comisión sobre el subtotal de items
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        className="text-primary"
+                        onClick={() => handleStartEditSource(s)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => handleDeleteSource(s.key)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <Input
+                placeholder="Nombre del canal (ej: PedidosYa)"
+                value={newSourceLabel}
+                onChange={(e) => setNewSourceLabel(e.target.value)}
+                className="w-48"
+              />
+              <Input
+                type="number"
+                min={0}
+                placeholder="% comisión"
+                value={newSourceRate}
+                onChange={(e) => setNewSourceRate(e.target.value)}
+                className="w-28"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAddSource}
+                disabled={!newSourceLabel.trim()}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Agregar canal
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Tabs defaultValue="burgers">
           <TabsList className="mb-6">
             <TabsTrigger value="burgers">Hamburguesas</TabsTrigger>
@@ -251,6 +473,25 @@ export default function PricingPage() {
                                 No disponible
                               </Badge>
                             )}
+                            {(() => {
+                              const cost = costByProduct[burger.id];
+                              if (!cost || cost.lines.length === 0) return null;
+                              const margin = computeMargin(burger.base_price, cost.total);
+                              return (
+                                <span
+                                  className="text-xs text-muted-foreground"
+                                  title={cost.incomplete ? "Receta incompleta: hay insumos faltantes o inactivos" : undefined}
+                                >
+                                  Costo: {formatCurrency(cost.total)}
+                                  {margin.marginPct !== null && ` · Margen: ${margin.marginPct.toFixed(0)}%`}
+                                  {cost.incomplete && (
+                                    <Badge variant="secondary" className="ml-1 text-xs text-status-ready">
+                                      Receta incompleta
+                                    </Badge>
+                                  )}
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           <div className="flex items-center gap-1">
@@ -327,7 +568,15 @@ export default function PricingPage() {
                         </div>
 
                         {expandedBurgerId === burger.id && (
-                          <BurgerVariantsPreview productId={burger.id} />
+                          <>
+                            <BurgerVariantsPreview productId={burger.id} />
+                            <div className="border-t px-3 pt-3">
+                              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                                Receta (insumos)
+                              </p>
+                              <RecipeEditor productId={burger.id} />
+                            </div>
+                          </>
                         )}
                       </div>
                     ))}

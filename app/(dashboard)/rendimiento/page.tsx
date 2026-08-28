@@ -25,6 +25,7 @@ import {
   Medal,
   XCircle,
   UtensilsCrossed,
+  PieChart,
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import {
@@ -32,10 +33,13 @@ import {
   useMonthlyComparison,
   useTopBurgers,
   useProductStats,
+  useRevenueBySource,
+  UNKNOWN_SOURCE_KEY,
 } from "@/lib/hooks/orders/use-orders-history";
 import { formatCurrency } from "@/lib/utils/format";
 import { ExternalIncomePanel } from "@/components/analytics/external-income-panel";
 import { useVertical } from "@/components/providers/vertical-provider";
+import { getOrderSources } from "@/lib/utils/commission";
 import {
   ChartContainer,
   ChartTooltip,
@@ -189,6 +193,8 @@ export default function AnalyticsPage() {
     viewMode,
     resolvedCustomRange
   );
+  const { data: revenueBySource, isLoading: revenueBySourceLoading } =
+    useRevenueBySource(selectedDate, viewMode, resolvedCustomRange);
 
   const handlePrev = () =>
     setSelectedDate((d) => navigate(d, viewMode, -1));
@@ -463,6 +469,64 @@ export default function AnalyticsPage() {
                     <span className="text-xs text-muted-foreground">{item.label}</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Revenue by source — cost/stock/finance porting, PR3. Mirrors the
+            "Unidades vendidas" card's structure/styling above (loading
+            skeleton, empty state, list-of-buckets layout) for visual
+            consistency. */}
+        <Card className="mt-4 ios-glass bg-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <PieChart className="h-5 w-5 text-muted-foreground" />
+              Ingresos por canal
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {revenueBySourceLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-10" />
+                <Skeleton className="h-10" />
+              </div>
+            ) : !revenueBySource || revenueBySource.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Sin ingresos en el período seleccionado
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {revenueBySource.map((entry) => {
+                  // Same source-key -> label resolution pattern as
+                  // order-details-modal.tsx: a source removed from config
+                  // after the fact falls back to the raw key, never
+                  // disappears. UNKNOWN_SOURCE_KEY gets its own explicit
+                  // Spanish label — it is NEVER resolved against
+                  // getOrderSources(), which would risk collisions with an
+                  // operator-named channel.
+                  const label =
+                    entry.source === UNKNOWN_SOURCE_KEY
+                      ? "Sin canal / desconocido"
+                      : (getOrderSources().find((s) => s.key === entry.source)
+                          ?.label ?? entry.source);
+                  return (
+                    <div
+                      key={entry.source}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-4 py-2.5"
+                    >
+                      <span className="flex-1 text-sm font-medium truncate">
+                        {label}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {entry.orders} {entry.orders === 1 ? "pedido" : "pedidos"}
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums">
+                        {formatCurrency(entry.revenue)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

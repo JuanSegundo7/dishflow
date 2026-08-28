@@ -89,7 +89,8 @@ export function OrderCardMobile({
           toast.success("Pedido actualizado");
           setIsEditing(false);
         },
-        onError: () => toast.error("Error al guardar"),
+        onError: (error) =>
+          toast.error(error instanceof Error ? error.message : "Error al guardar"),
       },
     );
   };

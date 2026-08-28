@@ -13,6 +13,7 @@ import {
   User,
   LogOut,
   CreditCard,
+  Package,
 } from "lucide-react";
 import {
   Sidebar,
@@ -55,6 +56,10 @@ const navigation = [
   { name: "Combos", href: "/combos", icon: Component, requiresCombos: true },
   { name: "Extras", href: "/extras", icon: Plus },
   { name: "Precios", href: "/precios", icon: DollarSign },
+  // Gated by stock_management via SERVICE_NAV_HREFS (lib/service-nav-map.ts)
+  // — hidden by isNavItemVisible below whenever that service is inactive,
+  // same as web_orders-gated items above.
+  { name: "Insumos", href: "/insumos", icon: Package },
   { name: "Mi Plan", href: "/plan", icon: CreditCard },
 ];
 

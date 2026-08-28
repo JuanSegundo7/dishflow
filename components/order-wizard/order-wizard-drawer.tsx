@@ -460,6 +460,11 @@ export function OrderWizardDrawer({
                   onNotesChange={wizard.settings.setNotes}
                   deliveryTime={wizard.settings.deliveryTime}
                   onDeliveryTimeChange={wizard.settings.setDeliveryTime}
+                  source={wizard.settings.source}
+                  onSourceChange={wizard.settings.setSource}
+                  commissionAmount={wizard.commissionAmount}
+                  priceAdjustment={wizard.settings.priceAdjustment}
+                  onPriceAdjustmentChange={wizard.settings.setPriceAdjustment}
                 />
               )}
             </div>

@@ -1,6 +1,7 @@
 import { SelectedBurger } from "@/lib/types/combo-types";
 import { SelectedSushiItem } from "@/lib/types/sushi-types";
 import { SelectedSide } from "../hooks/use-side-selection";
+import { computeCommission } from "@/lib/utils/commission";
 
 interface SelectedComboSlot {
   slotId: string;
@@ -162,6 +163,19 @@ export class OrderPriceCalculator {
     return 0;
   }
 
+  /**
+   * Cost/stock/finance porting, PR2: pure wrapper around
+   * lib/utils/commission.ts's computeCommission — the ONLY entry point that
+   * should compute a commission amount from an items subtotal + rate.
+   * `subtotalItems` MUST be the items-only subtotal (calculateSubtotal's
+   * return value) — delivery fee is deliberately excluded from the
+   * commission base (confirmed business rule), so callers must never pass
+   * a subtotal that already includes deliveryFee.
+   */
+  static calculateCommission(subtotalItems: number, rate: number): number {
+    return computeCommission(subtotalItems, rate);
+  }
+
   static calculateOrderTotal(params: {
     selectedBurgers: SelectedBurger[];
     selectedCombos: any[];
@@ -173,6 +187,13 @@ export class OrderPriceCalculator {
     discountType?: string;
     discountValue?: number;
     /**
+     * Cost/stock/finance porting, PR2: commission rate (%) for the order's
+     * selected source (see lib/utils/commission.ts's OrderSourceConfig).
+     * Optional, defaults to 0 — omitting it (every pre-PR2 caller) is a
+     * byte-for-byte no-op.
+     */
+    commissionRate?: number;
+    /**
      * "piece-selector" orderFlow (sushi) hook-in: the active flow's sushi
      * total (see calculateSushiTotal), added straight into the subtotal
      * this method computes internally. Optional, defaults to 0 — omitting
@@ -180,6 +201,19 @@ export class OrderPriceCalculator {
      * "builder-wizard" orderFlow.
      */
     additionalTotal?: number;
+    /**
+     * Cost/stock/finance porting, PR3: a signed flat amount adjusting the
+     * order total up or down (e.g. a manual price correction), kept
+     * strictly separate from discount_type/discount_value/discount_amount
+     * — it is NOT a discount and must never be routed through the discount
+     * fields (a negative discount would be structurally invalid; a
+     * negative price_adjustment is a legitimate value here). Optional,
+     * defaults to 0 — omitting it (every pre-PR3 caller) is a byte-for-byte
+     * no-op. Added into the total BEFORE commission is computed, so
+     * commission is charged on `subtotal + priceAdjustment`, not on
+     * `subtotal` alone.
+     */
+    priceAdjustment?: number;
   }) {
     const safeBurgers = Array.isArray(params.selectedBurgers)
       ? params.selectedBurgers
@@ -200,8 +234,6 @@ export class OrderPriceCalculator {
       params.additionalTotal ?? 0,
     );
 
-    console.log("🔍 SUBTOTAL:", subtotal);
-
     const normalizedDiscountType =
       params.discountType === "amount" || params.discountType === "percentage"
         ? params.discountType
@@ -213,16 +245,28 @@ export class OrderPriceCalculator {
       params.discountValue || 0,
     );
 
-    console.log("🔍 DISCOUNT AMOUNT:", discountAmount);
+    // Cost/stock/finance porting, PR3: price_adjustment is a signed flat
+    // amount added to the base BEFORE commission is computed — commission
+    // is charged on `subtotal + priceAdjustment`, not on `subtotal` alone.
+    // discountAmount above deliberately stays computed off `subtotal` only
+    // (unchanged) — price_adjustment never touches the discount base/fields.
+    const priceAdjustment = Number(params.priceAdjustment) || 0;
+    const commissionBase = subtotal + priceAdjustment;
+
+    // Commission base is `subtotal + priceAdjustment` (items + adjustment,
+    // still excluding delivery) — deliberately computed BEFORE deliveryFee
+    // is added below, so delivery is never part of the commission base
+    // (confirmed business rule).
+    const commissionAmount = this.calculateCommission(
+      commissionBase,
+      params.commissionRate || 0,
+    );
 
     const deliveryFee =
       params.deliveryType === "delivery" ? Number(params.deliveryFee) || 0 : 0;
 
-    console.log("🔍 DELIVERY FEE:", deliveryFee);
-
-    const total = subtotal - discountAmount + deliveryFee;
-
-    console.log("🔍 TOTAL FINAL:", total);
+    const total =
+      subtotal + priceAdjustment - discountAmount - commissionAmount + deliveryFee;
 
     return Number.isFinite(total) ? total : 0;
   }

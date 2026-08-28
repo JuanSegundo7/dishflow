@@ -4,6 +4,8 @@
 // gated — it's how a blocked/limited account manages their situation.
 export const SERVICE_NAV_HREFS: Record<string, string[]> = {
   web_orders: ["/", "/historial", "/clientes", "/rendimiento"],
-  // stock_management and ticket_printing currently gate no visible page —
-  // stock has no UI yet, ticket printing is a background service.
+  // stock_management now gates /insumos (cost/stock/finance porting, PR1 —
+  // see scripts/041-supplies-and-stock.sql and app/(dashboard)/insumos).
+  // ticket_printing still gates no visible page — it's a background service.
+  stock_management: ["/insumos"],
 };

@@ -21,6 +21,7 @@ import type { OrderFlow } from "@/lib/verticals";
 import { loadOrderIntoWizard } from "@/services/order-data-loader";
 import { useUpdateOrder } from "@/lib/hooks/orders/use-update-order";
 import { useSidesSelection } from "./use-side-selection";
+import { getOrderSources } from "@/lib/utils/commission";
 
 interface UseOrderWizardParams {
   meatExtra?: { price: number } | null;
@@ -147,6 +148,32 @@ export function useOrderWizard({
     );
   }, [subtotal, settings.discountType, settings.discountValue]);
 
+  // Cost/stock/finance porting, PR2: the commission rate for the wizard's
+  // currently-selected source, resolved from getOrderSources() — this is
+  // the SINGLE derived value both `commissionAmount` (used for on-screen
+  // display below, in summary-step's commission line) and `handleSubmit`'s
+  // persisted payload read from; neither one re-derives it separately, so
+  // display and payload can never disagree (see this hook's own
+  // orderPayload construction below).
+  const commissionRate = useMemo(() => {
+    if (!settings.source) return 0;
+    const config = getOrderSources().find((s) => s.key === settings.source);
+    return config?.commissionRate ?? 0;
+  }, [settings.source]);
+
+  // Cost/stock/finance porting, PR3: commission's base now includes
+  // price_adjustment (subtotal + priceAdjustment), matching
+  // OrderPriceCalculator.calculateOrderTotal's own commission base below —
+  // this is the SAME memo used for on-screen display (summary-step's
+  // commission line) and the frozen orderPayload value, so display and
+  // payload can never disagree, same guarantee as PR2's commissionAmount.
+  const commissionAmount = useMemo(() => {
+    return OrderPriceCalculator.calculateCommission(
+      subtotal + settings.priceAdjustment,
+      commissionRate,
+    );
+  }, [subtotal, settings.priceAdjustment, commissionRate]);
+
   const orderTotal = useMemo(() => {
     const raw = OrderPriceCalculator.calculateOrderTotal({
       selectedBurgers: burgers.selectedBurgers,
@@ -158,14 +185,17 @@ export function useOrderWizard({
       friesExtra,
       discountType: settings.discountType,
       discountValue: settings.discountValue,
+      commissionRate,
       additionalTotal: sushiAdditionalTotal,
+      priceAdjustment: settings.priceAdjustment,
     });
 
-    // Si el descuento es 100%, el total es 0 (incluye delivery fee)
-    if (
-      settings.discountType === "percentage" &&
-      settings.discountValue >= 100
-    ) {
+    // Si el descuento absorbe todo el subtotal, el total es 0 (incluye
+    // delivery fee) — cubre tanto un descuento porcentual del 100% como un
+    // descuento tipo "amount" que Math.min-clampea al subtotal en
+    // calculateDiscountAmount; ambos casos deben zerear commission_amount
+    // igual (ver orderPayload's discount_amount/commission_amount override).
+    if (discountAmount >= subtotal) {
       return 0;
     }
 
@@ -180,7 +210,11 @@ export function useOrderWizard({
     friesExtra,
     settings.discountType,
     settings.discountValue,
+    commissionRate,
     sushiAdditionalTotal,
+    settings.priceAdjustment,
+    discountAmount,
+    subtotal,
   ]);
 
   const extrasTotal = useMemo(() => {
@@ -327,14 +361,43 @@ export function useOrderWizard({
         discount_value: settings.discountValue,
         // 🔑 FIX: discount_amount guardado en DB también refleja el total real
         // (incluye delivery fee cuando el descuento es 100%)
+        // Cost/stock/finance porting, PR3: priceAdjustment is included in
+        // this override too — the total_amount formula this absorbs into
+        // (use-create-order.ts: `itemsTotal + price_adjustment -
+        // discountAmount - commissionAmount + deliveryFee`) now has
+        // price_adjustment as an addend, so discountAmount must absorb it
+        // too for the 100%-discount override to still land on exactly 0.
         discount_amount:
           orderTotal === 0
             ? subtotal +
+              settings.priceAdjustment +
               (effectiveDeliveryType === "delivery" ? settings.deliveryFee : 0)
             : discountAmount,
+        // Cost/stock/finance porting, PR3: signed flat amount, own field —
+        // never folded into discount_type/discount_value/discount_amount
+        // above. Not zeroed by the 100%-discount override (unlike
+        // commission_amount below) — see discount_amount's own override
+        // just above, which already absorbs it so the total still lands on
+        // exactly 0.
+        price_adjustment: settings.priceAdjustment,
         items: allItems,
         notes: settings.notes || null,
         delivery_time: settings.deliveryTime || null,
+        // Cost/stock/finance porting, PR2: frozen at submit time from the
+        // SAME commissionRate/commissionAmount memos used for on-screen
+        // display above — never re-read from getOrderSources() again here.
+        // commission_amount is zeroed alongside discount_amount when the
+        // 100%-discount override above already reduces the total to 0 —
+        // without this, use-create-order.ts's `total = itemsTotal -
+        // discountAmount - commissionAmount + deliveryFee` would persist a
+        // NEGATIVE total_amount (≈ -commissionAmount) instead of 0, since
+        // discountAmount already absorbed the entire subtotal+deliveryFee
+        // and commissionAmount would then subtract again on top of that.
+        // commission_rate itself is kept as configured — it's a record of
+        // what rate was selected, not an amount that affects the total.
+        source: settings.source,
+        commission_rate: commissionRate,
+        commission_amount: orderTotal === 0 ? 0 : commissionAmount,
       };
 
       let orderId: string;
@@ -384,6 +447,8 @@ export function useOrderWizard({
     orderTotal,
     extrasTotal,
     discountAmount,
+    commissionAmount,
+    commissionRate,
     canProceedFromCustomer,
     canProceedFromBurgers,
     canProceedFromSides,
